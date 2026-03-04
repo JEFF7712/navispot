@@ -226,7 +226,7 @@ export function calculateTrackSimilarity(
   );
 
   const albumSimilarity = calculateAlbumSimilarity(
-    spotifyTrack.album.name,
+    spotifyTrack.album?.name || '',
     navidromeSong.album
   );
 
@@ -262,7 +262,7 @@ export function findBestMatch(
   const scoredMatches: FuzzyMatchResult[] = candidates
     .map((song) => {
       const albumSim = calculateAlbumSimilarity(
-        spotifyTrack.album.name,
+        spotifyTrack.album?.name || '',
         song.album
       );
       const score = calculateTrackSimilarity(spotifyTrack, song);

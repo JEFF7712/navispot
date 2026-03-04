@@ -106,7 +106,7 @@ export function usePlaylistTable({
           comparison = (a.tracks?.total ?? 0) - (b.tracks?.total ?? 0);
           break;
         case 'owner':
-          comparison = a.owner.display_name.localeCompare(b.owner.display_name);
+          comparison = (a.owner?.display_name || '').localeCompare(b.owner?.display_name || '');
           break;
       }
       return sortDirection === 'asc' ? comparison : -comparison;

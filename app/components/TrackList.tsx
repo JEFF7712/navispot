@@ -40,7 +40,7 @@ export function TrackList({ tracks, matches }: TrackListProps) {
 
             if (!track) return null;
 
-            const artistNames = track.artists.map((a) => a.name).join(', ');
+            const artistNames = (track.artists || []).map((a) => a.name).join(', ');
 
             return (
               <tr
@@ -62,7 +62,7 @@ export function TrackList({ tracks, matches }: TrackListProps) {
                 </td>
                 <td className="py-3 px-4 hidden lg:table-cell">
                   <div className="text-zinc-600 dark:text-zinc-400 truncate max-w-[180px]">
-                    {track.album.name}
+                    {track.album?.name || 'Unknown'}
                   </div>
                 </td>
                 <td className="py-3 px-4 text-right text-zinc-500 dark:text-zinc-400">

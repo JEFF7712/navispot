@@ -884,8 +884,8 @@ export function PlaylistTable({
                       {(item.tracks?.total ?? 0).toLocaleString()}
                     </td>
                     <td className="px-2 py-2">
-                      <div className="text-sm text-zinc-600 dark:text-zinc-400 truncate" title={item.owner.display_name}>
-                        {item.owner.display_name}
+                      <div className="text-sm text-zinc-600 dark:text-zinc-400 truncate" title={item.owner?.display_name || 'Unknown'}>
+                        {item.owner?.display_name || 'Unknown'}
                       </div>
                     </td>
                     <td className="px-2 py-2 hidden md:table-cell">

@@ -171,7 +171,7 @@ export async function matchTrack(
     matchStrategy: bestResult.strategy,
     matchScore: bestResult.score > 0 ? bestResult.score : 0,
     status: hasAmbiguous ? 'ambiguous' : 'unmatched',
-    candidates: bestResult.candidates,
+    candidates: bestResult.candidates ?? [],
   };
 }
 

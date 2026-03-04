@@ -107,8 +107,8 @@ export function TableRow({ playlist, isSelected, onToggle, isExporting = false, 
         {(playlist.tracks?.total ?? 0).toLocaleString()} tracks
       </td>
       <td className="px-4 py-3 w-[200px]">
-        <span className="truncate text-sm text-zinc-600 dark:text-zinc-400 block" title={playlist.owner.display_name}>
-          {playlist.owner.display_name}
+        <span className="truncate text-sm text-zinc-600 dark:text-zinc-400 block" title={playlist.owner?.display_name || 'Unknown'}>
+          {playlist.owner?.display_name || 'Unknown'}
         </span>
       </td>
       <td className="px-4 py-3 w-[120px]">

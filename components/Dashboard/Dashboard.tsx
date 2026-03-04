@@ -47,6 +47,8 @@ import { PlaylistTableItem, PlaylistInfo } from "@/types/playlist-table"
 import { TrackMatch } from "@/types/matching"
 import Image from "next/image"
 import NavispotLogo from "@/public/navispot.png"
+import { CsvUpload } from "@/components/Dashboard/CsvUpload"
+import { CsvPlaylist } from "@/lib/csv/parser"
 
 const LIKED_SONGS_ID = "liked-songs"
 
@@ -134,6 +136,7 @@ export function Dashboard() {
   >(new Map())
   const [playlistCreatedDates, setPlaylistCreatedDates] = useState<Map<string, string>>(new Map())
   const [fetchingDates, setFetchingDates] = useState(false)
+  const [csvPlaylists, setCsvPlaylists] = useState<CsvPlaylist[]>([])
 
   const isExportingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -277,6 +280,16 @@ export function Dashboard() {
     }
   }
 
+  const handleCsvImport = useCallback((imported: CsvPlaylist[]) => {
+    setCsvPlaylists((prev) => [...prev, ...imported])
+    // Auto-select imported playlists
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      imported.forEach((p) => next.add(p.id))
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!spotify.isAuthenticated) return
     const allData = getAllExportData()
@@ -330,7 +343,7 @@ export function Dashboard() {
         id: playlist.id,
         name: playlist.name,
         images: playlist.images,
-        owner: { display_name: playlist.owner.display_name },
+        owner: { display_name: playlist.owner?.display_name || 'Unknown' },
         tracks: playlist.tracks,
         snapshot_id: playlist.snapshot_id || "",
         isLikedSongs: false,
@@ -360,9 +373,22 @@ export function Dashboard() {
       exportStatus: "none",
     }
 
-    const allItems = [likedSongsItem, ...playlistItems]
+    // Add CSV-imported playlists
+    const csvItems: PlaylistTableItem[] = csvPlaylists.map((csv) => ({
+      id: csv.id,
+      name: csv.name,
+      images: [{ url: "" }],
+      owner: { display_name: "CSV Import" },
+      tracks: { total: csv.tracks.length },
+      snapshot_id: "",
+      isLikedSongs: false,
+      selected: selectedIds.has(csv.id),
+      exportStatus: "none" as const,
+    }))
+
+    const allItems = [likedSongsItem, ...csvItems, ...playlistItems]
     setTableItems(allItems)
-  }, [playlists, navidromePlaylists, selectedIds, likedSongsCount, trackExportCache, playlistCreatedDates])
+  }, [playlists, navidromePlaylists, selectedIds, likedSongsCount, trackExportCache, playlistCreatedDates, csvPlaylists])
 
   // Background fetch of playlist created dates (earliest added_at)
   // Fetches progressively — updates state after each playlist for immediate UI feedback
@@ -618,7 +644,7 @@ export function Dashboard() {
     const owners = new Set<string>()
     tableItems.forEach((item) => {
       if (!item.isLikedSongs) {
-        owners.add(item.owner.display_name)
+        owners.add(item.owner?.display_name || 'Unknown')
       }
     })
     return Array.from(owners).sort((a, b) => a.localeCompare(b))
@@ -642,14 +668,14 @@ export function Dashboard() {
       result = result.filter(
         (item) =>
           item.name.toLowerCase().includes(query) ||
-          item.owner.display_name.toLowerCase().includes(query),
+          (item.owner?.display_name || '').toLowerCase().includes(query),
       )
     }
 
     // Owner filter
     if (ownerFilter) {
       result = result.filter(
-        (item) => item.owner.display_name === ownerFilter,
+        (item) => (item.owner?.display_name || 'Unknown') === ownerFilter,
       )
     }
 
@@ -692,7 +718,7 @@ export function Dashboard() {
           comparison = (a.tracks?.total ?? 0) - (b.tracks?.total ?? 0)
           break
         case "owner":
-          comparison = a.owner.display_name.localeCompare(b.owner.display_name)
+          comparison = (a.owner?.display_name || '').localeCompare(b.owner?.display_name || '')
           break
       }
       return sortDirection === "asc" ? comparison : -comparison
@@ -770,13 +796,21 @@ export function Dashboard() {
   )
 
   const handleStartExport = async () => {
-    if (!spotify.isAuthenticated || !spotify.token || !navidrome.credentials) {
-      setError("Please connect both Spotify and Navidrome to export playlists.")
+    if (!navidrome.credentials) {
+      setError("Please connect to Navidrome to export playlists.")
       return
     }
 
     const hasLikedSongs = selectedIds.has(LIKED_SONGS_ID)
-    const selectedPlaylists = playlists.filter((p) => selectedIds.has(p.id))
+    const selectedSpotifyPlaylists = playlists.filter((p) => selectedIds.has(p.id))
+    const selectedCsvPlaylists = csvPlaylists.filter((p) => selectedIds.has(p.id))
+
+    // Require Spotify auth only if exporting Spotify playlists
+    if ((hasLikedSongs || selectedSpotifyPlaylists.length > 0) && (!spotify.isAuthenticated || !spotify.token)) {
+      setError("Please connect Spotify to export Spotify playlists. CSV imports only require Navidrome.")
+      return
+    }
+
     const itemsToExport: (PlaylistItem | SpotifyPlaylist)[] = []
 
     if (hasLikedSongs) {
@@ -785,7 +819,19 @@ export function Dashboard() {
         tracks: { total: likedSongsCount },
       })
     }
-    itemsToExport.push(...selectedPlaylists)
+    itemsToExport.push(...selectedSpotifyPlaylists)
+
+    // Add CSV playlists as PlaylistItems
+    selectedCsvPlaylists.forEach((csv) => {
+      itemsToExport.push({
+        id: csv.id,
+        name: csv.name,
+        images: [{ url: "" }],
+        owner: { id: "csv", display_name: "CSV Import" },
+        tracks: { total: csv.tracks.length },
+        isLikedSongs: false,
+      })
+    })
 
     if (itemsToExport.length === 0) {
       return
@@ -817,7 +863,7 @@ export function Dashboard() {
     setUnmatchedSongs([])
 
     try {
-      spotifyClient.setToken(spotify.token)
+      if (spotify.token) spotifyClient.setToken(spotify.token)
       const navidromeClient = new NavidromeApiClient(
         navidrome.credentials.url,
         navidrome.credentials.username,
@@ -862,10 +908,17 @@ export function Dashboard() {
 
         let tracks: SpotifyTrack[]
         let isLikedSongs = false
+        let isCsvImport = false
         let cachedData: PlaylistExportData | undefined = undefined
         let useDifferentialMatching = false
 
-        if ("isLikedSongs" in item && item.isLikedSongs) {
+        // Check if this is a CSV-imported playlist
+        const csvPlaylist = csvPlaylists.find((c) => c.id === item.id)
+
+        if (csvPlaylist) {
+          tracks = csvPlaylist.tracks
+          isCsvImport = true
+        } else if ("isLikedSongs" in item && item.isLikedSongs) {
           const savedTracks = await spotifyClient.getAllSavedTracks(signal)
           tracks = savedTracks.map((t) => t.track).filter((t) => t != null)
           isLikedSongs = true
@@ -1027,7 +1080,7 @@ export function Dashboard() {
         )
 
         // Save track status to cache after matching
-        if (!isLikedSongs) {
+        if (!isLikedSongs && !isCsvImport) {
           const tracksData: Record<string, TrackExportStatus> = {}
           let matchedCount = 0
           let unmatchedCount = 0
@@ -1429,8 +1482,14 @@ export function Dashboard() {
         result.push({ name: p.name, trackCount: p.tracks?.total ?? 0 })
       })
 
+    csvPlaylists
+      .filter((p) => selectedIds.has(p.id))
+      .forEach((p) => {
+        result.push({ name: p.name, trackCount: p.tracks.length })
+      })
+
     return result
-  }, [selectedIds, likedSongsCount, playlists])
+  }, [selectedIds, likedSongsCount, playlists, csvPlaylists])
 
   const playlistGroups: PlaylistGroup[] = useMemo(() => {
     return selectedPlaylistsStats
@@ -1474,7 +1533,9 @@ export function Dashboard() {
           </span>
         </div>
 
-        {/* Export Button - Right Side */}
+        {/* CSV Import + Export Button - Right Side */}
+        <div className="flex items-center gap-3">
+        <CsvUpload onPlaylistsImported={handleCsvImport} disabled={isExporting} />
         <button
           onClick={
             isExporting ? handleCancelExport : () => setShowConfirmation(true)
@@ -1490,6 +1551,7 @@ export function Dashboard() {
             ? "Cancel Export"
             : `Export Selected (${selectedIds.size})`}
         </button>
+        </div>
       </div>
     </div>
   )
@@ -1551,17 +1613,18 @@ export function Dashboard() {
     />
   )
 
-  if (!spotify.isAuthenticated) {
+  if (!spotify.isAuthenticated && csvPlaylists.length === 0) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-6">
         <p className="text-gray-500">
-          Please connect your Spotify account to view playlists.
+          Connect your Spotify account to view playlists, or import from CSV.
         </p>
+        <CsvUpload onPlaylistsImported={handleCsvImport} />
       </div>
     )
   }
 
-  if (loading) {
+  if (loading && csvPlaylists.length === 0) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-500"></div>
@@ -1577,10 +1640,11 @@ export function Dashboard() {
     )
   }
 
-  if (playlists.length === 0 && likedSongsCount === 0) {
+  if (playlists.length === 0 && likedSongsCount === 0 && csvPlaylists.length === 0) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-6">
         <p className="text-gray-500">No playlists or saved tracks found.</p>
+        <CsvUpload onPlaylistsImported={handleCsvImport} />
       </div>
     )
   }
