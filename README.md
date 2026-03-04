@@ -104,6 +104,20 @@ pnpm test lib/matching/strict-matcher.test.ts
 pnpm test -t "returns matched"
 ```
 
+### Lidarr Connection Note
+
+If Lidarr is protected behind Cloudflare Access (or any strict CORS policy),
+browser-direct API calls can fail with `NetworkError when attempting to fetch resource`.
+Enable server-side proxying by setting:
+
+```env
+NEXT_PUBLIC_LIDARR_PROXY=true
+LIDARR_INTERNAL_URL=http://lidarr
+```
+
+`LIDARR_INTERNAL_URL` should be reachable from the NaviSpot container (for this
+homelab setup, `http://lidarr` resolves to the media namespace service).
+
 **Spotify Setup:**
 
 1. Create app at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)

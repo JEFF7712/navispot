@@ -1,5 +1,6 @@
 import { retryWithBackoff } from "@/lib/utils/retry"
 import { RateLimiter } from "@/lib/spotify/rate-limiter"
+import { shouldUseLidarrProxy } from "@/lib/lidarr/proxy-config"
 
 export interface LidarrCredentials {
   url: string
@@ -44,10 +45,12 @@ const lidarrRateLimiter = new RateLimiter(2, 1000)
 export class LidarrApiClient {
   private baseUrl: string
   private apiKey: string
+  private useProxy: boolean
 
   constructor(url: string, apiKey: string) {
     this.baseUrl = url.replace(/\/+$/, "")
     this.apiKey = apiKey
+    this.useProxy = shouldUseLidarrProxy()
   }
 
   async ping(): Promise<{ success: boolean; version?: string; error?: string }> {
@@ -132,6 +135,25 @@ export class LidarrApiClient {
   }
 
   private async _fetch(endpoint: string, options?: RequestInit): Promise<Response> {
+    if (this.useProxy && typeof window !== "undefined") {
+      const method = options?.method ?? "GET"
+      const body = typeof options?.body === "string" ? options.body : undefined
+
+      return fetch("/api/lidarr/proxy", {
+        method: "POST",
+        signal: options?.signal,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          endpoint,
+          method,
+          body,
+          apiKey: this.apiKey,
+        }),
+      })
+    }
+
     return fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
       headers: {
