@@ -142,6 +142,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setLidarrCredentials = useCallback(async (credentials: LidarrCredentials): Promise<boolean> => {
+    setLidarr((prev) => ({ ...prev, error: null, credentials }));
+
+    try {
+      const client = new LidarrApiClient(credentials.url, credentials.apiKey);
+      const result = await client.ping();
+
+      if (!result.success) {
+        setLidarr((prev) => ({
+          ...prev,
+          isConnected: false,
+          version: null,
+          error: result.error || 'Connection failed',
+        }));
+        return false;
+      }
+
+      localStorage.setItem(LIDARR_STORAGE_KEY, JSON.stringify({
+        url: credentials.url,
+        apiKey: credentials.apiKey,
+        version: result.version,
+      }));
+
+      setLidarr((prev) => ({
+        ...prev,
+        isConnected: true,
+        version: result.version || null,
+        error: null,
+      }));
+
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect';
+      setLidarr((prev) => ({
+        ...prev,
+        isConnected: false,
+        version: null,
+        error: errorMessage,
+      }));
+      return false;
+    }
+  }, []);
+
+  const clearLidarrCredentials = useCallback(() => {
+    localStorage.removeItem(LIDARR_STORAGE_KEY);
+    setLidarr({
+      isConnected: false,
+      credentials: null,
+      version: null,
+      error: null,
+    });
+  }, []);
+
   const loadStoredAuth = useCallback(async () => {
     try {
       const storedSpotify = localStorage.getItem(SPOTIFY_STORAGE_KEY);
@@ -355,59 +408,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       error: null,
       token: null,
       clientId: null,
-    });
-  }, []);
-
-  const setLidarrCredentials = useCallback(async (credentials: LidarrCredentials): Promise<boolean> => {
-    setLidarr((prev) => ({ ...prev, error: null, credentials }));
-
-    try {
-      const client = new LidarrApiClient(credentials.url, credentials.apiKey);
-      const result = await client.ping();
-
-      if (!result.success) {
-        setLidarr((prev) => ({
-          ...prev,
-          isConnected: false,
-          version: null,
-          error: result.error || 'Connection failed',
-        }));
-        return false;
-      }
-
-      localStorage.setItem(LIDARR_STORAGE_KEY, JSON.stringify({
-        url: credentials.url,
-        apiKey: credentials.apiKey,
-        version: result.version,
-      }));
-
-      setLidarr((prev) => ({
-        ...prev,
-        isConnected: true,
-        version: result.version || null,
-        error: null,
-      }));
-
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to connect';
-      setLidarr((prev) => ({
-        ...prev,
-        isConnected: false,
-        version: null,
-        error: errorMessage,
-      }));
-      return false;
-    }
-  }, []);
-
-  const clearLidarrCredentials = useCallback(() => {
-    localStorage.removeItem(LIDARR_STORAGE_KEY);
-    setLidarr({
-      isConnected: false,
-      credentials: null,
-      version: null,
-      error: null,
     });
   }, []);
 
