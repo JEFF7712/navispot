@@ -1,5 +1,7 @@
 "use client"
 
+import { useCallback, type KeyboardEvent } from "react"
+
 export interface SelectedPlaylist {
   id: string
   name: string
@@ -57,12 +59,25 @@ export function SelectedPlaylistsPanel({
     selectedPlaylists.length > 0 &&
     selectedPlaylists.every((p) => checkedPlaylistIds.has(p.id))
 
-  const handlePlaylistRowClick = (playlistId: string) => {
+  const handlePlaylistRowClick = useCallback((playlistId: string) => {
     onPlaylistClick(playlistId)
     if (!isExporting) {
       onToggleCheck(playlistId)
     }
-  }
+  }, [isExporting, onPlaylistClick, onToggleCheck])
+
+  const handleRowKeyDown = useCallback(
+    (playlistId: string, event: KeyboardEvent<HTMLTableRowElement>) => {
+      const target = event.target as HTMLElement
+      if (target && target.closest("input,button,a,select,textarea")) return
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        handlePlaylistRowClick(playlistId)
+      }
+    },
+    [handlePlaylistRowClick],
+  )
 
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden flex flex-col h-full">
@@ -160,15 +175,19 @@ export function SelectedPlaylistsPanel({
             {selectedPlaylists.map((playlist) => (
               <tr
                 key={playlist.id}
+                tabIndex={isExporting ? -1 : 0}
+                role="button"
+                aria-pressed={checkedPlaylistIds.has(playlist.id)}
                 onClick={() => handlePlaylistRowClick(playlist.id)}
+                onKeyDown={(event) => handleRowKeyDown(playlist.id, event)}
                 className={`
-                  cursor-pointer transition-colors
+                  cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/50
                   ${
                     checkedPlaylistIds.has(playlist.id)
                       ? "bg-zinc-100 dark:bg-zinc-800 border-l-4 border-l-green-500"
                       : currentPlaylistId === playlist.id
                         ? "bg-blue-50 dark:bg-blue-900/20"
-                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                        : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   }
                 `}
               >

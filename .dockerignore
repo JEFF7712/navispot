@@ -1,3 +1,9 @@
 node_modules
 .next
 .git
+.env.local
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key

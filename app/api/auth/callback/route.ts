@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SpotifyToken } from '@/types';
+import { signSpotifyTokenCookie } from '@/lib/auth/spotify-cookie';
 
 export async function GET(request: NextRequest) {
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || 'navispot.queen.pro.et';
-  const protocol = request.headers.get('x-forwarded-proto') || 'https';
-  const baseUrl = `${protocol}://${host}`;
+  const baseUrl = getTrustedAppUrl();
   
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -43,9 +42,9 @@ export async function GET(request: NextRequest) {
       scope: tokenData.scope,
     };
 
-    const encryptedToken = Buffer.from(JSON.stringify(token)).toString('base64');
+    const signedToken = signSpotifyTokenCookie(token);
     
-    response.cookies.set('spotify_token', encryptedToken, {
+    response.cookies.set('spotify_token', signedToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -57,9 +56,28 @@ export async function GET(request: NextRequest) {
     response.cookies.delete('spotify_code_verifier');
 
     return response;
-  } catch {
+} catch {
     return NextResponse.redirect(new URL('/?error=token_exchange_failed', baseUrl));
   }
+}
+
+function getTrustedAppUrl(): string {
+  const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.SPOTIFY_REDIRECT_URI,
+    'http://localhost:3000',
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return new URL(candidate).origin;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return 'http://localhost:3000';
 }
 
 interface TokenExchangeResponse {

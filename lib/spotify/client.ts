@@ -1,6 +1,6 @@
 import { SpotifyPlaylistsResponse, SpotifyTracksResponse, SpotifyUser, SpotifyToken, SpotifyPlaylist, SpotifyPlaylistTrack, SpotifySavedTracksResponse, SpotifySavedTrack } from '@/types';
 import { isTokenExpired } from './token-storage';
-import { SPOTIFY_STORAGE_KEY } from '@/types/auth-context';
+import { getRetryAfterSeconds, parseSpotifyErrorMessage } from './response-utils';
 import { spotifyRateLimiter } from './rate-limiter';
 
 const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
@@ -28,7 +28,7 @@ export class SpotifyClient {
     if (bypassCache) {
       params.append('_t', Date.now().toString());
     }
-    const response = await this.fetch(`/me/playlists?${params.toString()}`, signal, {}, bypassCache);
+    const response = await this.fetch(`/me/playlists?${params.toString()}`, signal);
     return response.json();
   }
 
@@ -61,7 +61,7 @@ export class SpotifyClient {
     if (bypassCache) {
       params.append('_t', Date.now().toString());
     }
-    const response = await this.fetch(`/me/tracks?${params.toString()}`, signal, {}, bypassCache);
+    const response = await this.fetch(`/me/tracks?${params.toString()}`, signal);
     return response.json();
   }
 
@@ -84,7 +84,7 @@ export class SpotifyClient {
   async getSavedTracksCount(signal?: AbortSignal, bypassCache: boolean = false): Promise<number> {
     await spotifyRateLimiter.acquire();
     const url = bypassCache ? `/me/tracks?limit=1&_t=${Date.now()}` : '/me/tracks?limit=1';
-    const response = await this.fetch(url, signal, {}, bypassCache);
+    const response = await this.fetch(url, signal);
     const data: SpotifySavedTracksResponse = await response.json();
     return data.total;
   }
@@ -173,13 +173,11 @@ export class SpotifyClient {
   }
 
   async refreshAccessToken(): Promise<SpotifyToken | null> {
-    if (!this.token?.refreshToken) return null;
+    if (!this.token) return null;
 
     try {
       const response = await fetch('/api/auth/refresh', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: this.token.refreshToken }),
       });
 
       if (!response.ok) return null;
@@ -194,24 +192,19 @@ export class SpotifyClient {
       };
 
       this.setToken(newToken);
-      
-      const stored = localStorage.getItem(SPOTIFY_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        parsed.token = newToken;
-        localStorage.setItem(SPOTIFY_STORAGE_KEY, JSON.stringify(parsed));
-      }
-      
       return newToken;
     } catch {
       return null;
     }
   }
 
-  private async fetch(endpoint: string, signal?: AbortSignal, options: RequestInit = {}, bypassCache: boolean = false): Promise<Response> {
-    if (!this.token) {
-      this.token = this.loadTokenFromStorage();
-    }
+  private async fetch(
+    endpoint: string,
+    signal?: AbortSignal,
+    options: RequestInit = {},
+    retryCount = 0
+  ): Promise<Response> {
+    const MAX_429_RETRIES = 3;
 
     if (!this.token) {
       throw new Error('No access token available');
@@ -237,8 +230,22 @@ export class SpotifyClient {
     if (response.status === 401) {
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
-        return this.fetch(endpoint, signal, options, bypassCache);
+        return this.fetch(endpoint, signal, options, retryCount);
       }
+    }
+
+    if (response.status === 429 && retryCount < MAX_429_RETRIES) {
+      const waitSec = getRetryAfterSeconds(response);
+      await new Promise((r) => setTimeout(r, waitSec * 1000));
+      return this.fetch(endpoint, signal, options, retryCount + 1);
+    }
+
+    if (!response.ok) {
+      const message = await parseSpotifyErrorMessage(response);
+      if (response.status === 429) {
+        throw new Error('Spotify rate limit exceeded. Please wait a minute and try again.');
+      }
+      throw new Error(message);
     }
 
     return response;
@@ -248,13 +255,6 @@ export class SpotifyClient {
     this.token = null;
   }
 
-  private loadTokenFromStorage(): SpotifyToken | null {
-    const stored = localStorage.getItem(SPOTIFY_STORAGE_KEY);
-    if (!stored) return null;
-    
-    const parsed = JSON.parse(stored);
-    return parsed.token || null;
-  }
 }
 
 export const spotifyClient = new SpotifyClient();

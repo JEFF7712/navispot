@@ -1,11 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { AuthContextType, SpotifyAuthState, NavidromeAuthState, LidarrAuthState, SPOTIFY_STORAGE_KEY, NAVIDROME_STORAGE_KEY, LIDARR_STORAGE_KEY } from '@/types/auth-context';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { AuthContextType, SpotifyAuthState, NavidromeAuthState, LidarrAuthState } from '@/types/auth-context';
 import { SpotifyToken, SpotifyUser } from '@/types/spotify-auth';
 import { NavidromeCredentials } from '@/types/navidrome';
 import { NavidromeApiClient } from '@/lib/navidrome/client';
 import { LidarrApiClient, LidarrCredentials } from '@/lib/lidarr/client';
+import { spotifyClient } from '@/lib/spotify/client';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -45,40 +46,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const storedAuth = localStorage.getItem(NAVIDROME_STORAGE_KEY);
-      let storedToken = '';
-      let storedClientId = '';
-      
-      if (storedAuth) {
-        const parsed = JSON.parse(storedAuth);
-        storedToken = parsed.token ?? '';
-        storedClientId = parsed.clientId ?? '';
-      }
-
-      const client = new NavidromeApiClient(
-        credentials.url,
-        credentials.username,
-        credentials.password,
-        storedToken || undefined,
-        storedClientId || undefined
-      );
-      
+      const client = new NavidromeApiClient(credentials.url, credentials.username, credentials.password);
       await client.ping();
+
       const token = client.getToken();
       const clientId = client.getClientId();
-      
+
       if (token && clientId) {
-        localStorage.setItem(NAVIDROME_STORAGE_KEY, JSON.stringify({
-          url: credentials.url,
-          username: credentials.username,
-          password: credentials.password,
-          token,
-          clientId,
-        }));
-        
         setNavidrome((prev) => ({
           ...prev,
           isConnected: true,
+          credentials,
           serverVersion: 'Navidrome (native API)',
           error: null,
           token,
@@ -110,255 +88,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const refreshSpotifyTokenFromStorage = useCallback(async (token: SpotifyToken, user: SpotifyUser): Promise<boolean> => {
-    if (!token.refreshToken) return false;
-
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: token.refreshToken }),
-      });
-
-      if (!response.ok) return false;
-
-      const newToken = await response.json();
-      const updatedToken: SpotifyToken = {
-        ...token,
-        accessToken: newToken.access_token,
-        expiresAt: Date.now() + newToken.expires_in * 1000,
-      };
-
-      localStorage.setItem(SPOTIFY_STORAGE_KEY, JSON.stringify({ token: updatedToken, user }));
-      setSpotify({
-        isAuthenticated: true,
-        token: updatedToken,
-        user,
-      });
-      return true;
-    } catch (error) {
-      console.error('Error refreshing Spotify token on load:', error);
-      return false;
-    }
-  }, []);
-
-  const setLidarrCredentials = useCallback(async (credentials: LidarrCredentials): Promise<boolean> => {
-    setLidarr((prev) => ({ ...prev, error: null, credentials }));
-
-    try {
-      const client = new LidarrApiClient(credentials.url, credentials.apiKey);
-      const result = await client.ping();
-
-      if (!result.success) {
-        setLidarr((prev) => ({
-          ...prev,
-          isConnected: false,
-          version: null,
-          error: result.error || 'Connection failed',
-        }));
-        return false;
-      }
-
-      localStorage.setItem(LIDARR_STORAGE_KEY, JSON.stringify({
-        url: credentials.url,
-        apiKey: credentials.apiKey,
-        version: result.version,
-      }));
-
-      setLidarr((prev) => ({
-        ...prev,
-        isConnected: true,
-        version: result.version || null,
-        error: null,
-      }));
-
-      return true;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to connect';
-      setLidarr((prev) => ({
-        ...prev,
-        isConnected: false,
-        version: null,
-        error: errorMessage,
-      }));
-      return false;
-    }
-  }, []);
-
-  const clearLidarrCredentials = useCallback(() => {
-    localStorage.removeItem(LIDARR_STORAGE_KEY);
-    setLidarr({
-      isConnected: false,
-      credentials: null,
-      version: null,
-      error: null,
-    });
-  }, []);
-
-  const loadStoredAuth = useCallback(async () => {
-    try {
-      const storedSpotify = localStorage.getItem(SPOTIFY_STORAGE_KEY);
-      if (storedSpotify) {
-        const parsed = JSON.parse(storedSpotify) as { token: SpotifyToken; user: SpotifyUser };
-        if (parsed.token) {
-          const isExpired = parsed.token.expiresAt <= Date.now();
-          
-          if (isExpired) {
-            const refreshed = await refreshSpotifyTokenFromStorage(parsed.token, parsed.user);
-            if (refreshed) {
-              return;
-            }
-            localStorage.removeItem(SPOTIFY_STORAGE_KEY);
-          } else {
-            setSpotify({
-              isAuthenticated: true,
-              token: parsed.token,
-              user: parsed.user,
-            });
-          }
-        } else {
-          localStorage.removeItem(SPOTIFY_STORAGE_KEY);
-        }
-      }
-
-      const storedNavidrome = localStorage.getItem(NAVIDROME_STORAGE_KEY);
-      if (storedNavidrome) {
-        const parsed = JSON.parse(storedNavidrome);
-        setNavidrome((prev) => ({
-          ...prev,
-          credentials: { url: parsed.url, username: parsed.username, password: parsed.password },
-          token: parsed.token ?? null,
-          clientId: parsed.clientId ?? '',
-        }));
-        await testNavidromeConnection({ url: parsed.url, username: parsed.username, password: parsed.password });
-      }
-
-      const storedLidarr = localStorage.getItem(LIDARR_STORAGE_KEY);
-      if (storedLidarr) {
-        const parsed = JSON.parse(storedLidarr);
-        setLidarr((prev) => ({
-          ...prev,
-          credentials: { url: parsed.url, apiKey: parsed.apiKey },
-        }));
-        await setLidarrCredentials({ url: parsed.url, apiKey: parsed.apiKey });
-      }
-
-      if (!storedSpotify) {
-        const response = await fetch('/api/auth/session');
-        const data = await response.json();
-        
-        if (data.authenticated && data.token) {
-          const response2 = await fetch('https://api.spotify.com/v1/me', {
-            headers: { Authorization: `Bearer ${data.token.accessToken}` },
-          });
-          
-          if (response2.ok) {
-            const user = await response2.json();
-            const authData = { token: data.token, user };
-            localStorage.setItem(SPOTIFY_STORAGE_KEY, JSON.stringify(authData));
-            setSpotify({
-              isAuthenticated: true,
-              token: data.token,
-              user,
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error loading stored auth:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [testNavidromeConnection, refreshSpotifyTokenFromStorage, setLidarrCredentials]);
-
-  useEffect(() => {
-    loadStoredAuth();
-  }, [loadStoredAuth]);
-
-  const spotifyLogin = useCallback(async () => {
-    try {
-      const response = await fetch('/api/auth/spotify');
-      const data = await response.json();
-      if (data.authUrl) {
-        window.location.href = data.authUrl;
-      }
-    } catch (error) {
-      console.error('Error initiating Spotify login:', error);
-      throw error;
-    }
-  }, []);
-
-  const spotifyLogout = useCallback(async () => {
-    try {
-      const response = await fetch('/api/auth/spotify', { method: 'DELETE' });
-      if (response.ok) {
-        localStorage.removeItem(SPOTIFY_STORAGE_KEY);
-        setSpotify({
-          isAuthenticated: false,
-          user: null,
-          token: null,
-        });
-      }
-    } catch (error) {
-      console.error('Error logging out from Spotify:', error);
-      localStorage.removeItem(SPOTIFY_STORAGE_KEY);
-      setSpotify({
-        isAuthenticated: false,
-        user: null,
-        token: null,
-      });
-    }
-  }, []);
-
-  const refreshSpotifyToken = useCallback(async (): Promise<boolean> => {
-    try {
-      const stored = localStorage.getItem(SPOTIFY_STORAGE_KEY);
-      if (!stored) return false;
-      
-      const parsed = JSON.parse(stored) as { token: SpotifyToken };
-      if (!parsed.token?.refreshToken) return false;
-
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: parsed.token.refreshToken }),
-      });
-
-      if (!response.ok) return false;
-
-      const newToken = await response.json();
-      const updatedToken: SpotifyToken = {
-        ...parsed.token,
-        accessToken: newToken.access_token,
-        expiresAt: Date.now() + newToken.expires_in * 1000,
-      };
-
-      localStorage.setItem(SPOTIFY_STORAGE_KEY, JSON.stringify({ token: updatedToken, user: spotify.user }));
-      setSpotify((prev) => ({ ...prev, token: updatedToken }));
-      return true;
-    } catch (error) {
-      console.error('Error refreshing Spotify token:', error);
-      return false;
-    }
-  }, [spotify.user]);
-
   const setNavidromeCredentials = useCallback(async (credentials: NavidromeCredentials): Promise<boolean> => {
     setNavidrome((prev) => ({ ...prev, error: null, credentials }));
 
     try {
-      const client = new NavidromeApiClient(
-        credentials.url,
-        credentials.username,
-        credentials.password
-      );
-      
-      const loginResult = await client.login(credentials.username, credentials.password);
-      
-      if (!loginResult.success) {
+      const client = new NavidromeApiClient(credentials.url, credentials.username, credentials.password);
+      const result = await client.login(credentials.username, credentials.password);
+
+      if (!result.success) {
         setNavidrome((prev) => ({
           ...prev,
           isConnected: false,
-          error: loginResult.error || 'Login failed',
+          error: result.error || 'Login failed',
           token: null,
           clientId: null,
         }));
@@ -367,14 +108,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const token = client.getToken();
       const clientId = client.getClientId();
-      
-      localStorage.setItem(NAVIDROME_STORAGE_KEY, JSON.stringify({
-        url: credentials.url,
-        username: credentials.username,
-        password: credentials.password,
-        token,
-        clientId,
-      }));
 
       setNavidrome((prev) => ({
         ...prev,
@@ -400,7 +133,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const clearNavidromeCredentials = useCallback(() => {
-    localStorage.removeItem(NAVIDROME_STORAGE_KEY);
     setNavidrome({
       isConnected: false,
       credentials: null,
@@ -409,6 +141,151 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token: null,
       clientId: null,
     });
+  }, []);
+
+  const setLidarrCredentials = useCallback(async (credentials: LidarrCredentials): Promise<boolean> => {
+    setLidarr((prev) => ({ ...prev, error: null, credentials }));
+
+    try {
+      const client = new LidarrApiClient(credentials.url, credentials.apiKey);
+      const result = await client.ping();
+
+      if (!result.success) {
+        setLidarr((prev) => ({
+          ...prev,
+          isConnected: false,
+          version: null,
+          error: result.error || 'Connection failed',
+        }));
+        return false;
+      }
+
+      setLidarr((prev) => ({
+        ...prev,
+        isConnected: true,
+        version: result.version || null,
+        error: null,
+      }));
+
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect';
+      setLidarr((prev) => ({
+        ...prev,
+        isConnected: false,
+        version: null,
+        error: errorMessage,
+      }));
+      return false;
+    }
+  }, []);
+
+  const clearLidarrCredentials = useCallback(() => {
+    setLidarr({
+      isConnected: false,
+      credentials: null,
+      version: null,
+      error: null,
+    });
+  }, []);
+
+  const refreshSpotifyToken = useCallback(async (): Promise<boolean> => {
+    if (!spotify.token) {
+      return false;
+    }
+
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json();
+      const updatedToken: SpotifyToken = {
+        ...spotify.token,
+        accessToken: data.access_token,
+        expiresAt: Date.now() + data.expires_in * 1000,
+        tokenType: data.token_type,
+        scope: data.scope,
+      };
+
+      setSpotify((prev) => ({ ...prev, token: updatedToken }));
+      return true;
+    } catch (error) {
+      console.error('Error refreshing Spotify token:', error);
+      return false;
+    }
+  }, [spotify.token]);
+
+  const initializeSpotifySession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/session');
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      if (data.authenticated && data.token) {
+        spotifyClient.setToken(data.token);
+        let user: SpotifyUser | null = null;
+
+        try {
+          user = await spotifyClient.getCurrentUser();
+        } catch (error) {
+          console.error('Failed to fetch Spotify user on load:', error);
+        }
+
+        setSpotify({
+          isAuthenticated: true,
+          token: data.token,
+          user,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading Spotify session:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    initializeSpotifySession();
+  }, [initializeSpotifySession]);
+
+  useEffect(() => {
+    if (spotify.token) {
+      spotifyClient.setToken(spotify.token);
+    } else {
+      spotifyClient.clearToken();
+    }
+  }, [spotify.token]);
+
+  const spotifyLogin = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/spotify');
+      const data = await response.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    } catch (error) {
+      console.error('Error initiating Spotify login:', error);
+      throw error;
+    }
+  }, []);
+
+  const spotifyLogout = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/spotify', { method: 'DELETE' });
+      if (response.ok) {
+        setSpotify({ isAuthenticated: false, user: null, token: null });
+      }
+    } catch (error) {
+      console.error('Error logging out from Spotify:', error);
+      setSpotify({ isAuthenticated: false, user: null, token: null });
+    }
   }, []);
 
   const value: AuthContextType = {

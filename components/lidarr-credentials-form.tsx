@@ -130,7 +130,7 @@ export function LidarrCredentialsForm({
       </div>
 
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Optional — connect Lidarr to automatically download artists from your playlists
+        Optional — connect Lidarr to automatically download artists from your playlists. Credentials are kept in memory only and are cleared on refresh.
       </p>
 
       {lidarr.error && !localError && (

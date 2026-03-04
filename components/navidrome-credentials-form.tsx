@@ -153,6 +153,10 @@ export function NavidromeCredentialsForm({
         )}
       </div>
 
+      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+        Credentials are kept in memory only and are cleared on refresh.
+      </p>
+
       {navidrome.error && !localError && (
         <div className="rounded-md bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
           {navidrome.error}

@@ -23,11 +23,17 @@ interface SongsPanelProps {
   isLoading?: boolean
 }
 
+type DownloadFeedback = {
+  message: string
+  variant: "success" | "error"
+}
+
 export function SongsPanel({
   playlistGroups,
   isLoading = false,
 }: SongsPanelProps) {
   const [showUnmatchedOnly, setShowUnmatchedOnly] = useState(false)
+  const [downloadFeedback, setDownloadFeedback] = useState<DownloadFeedback | null>(null)
 
   const filteredGroups = useMemo(() => {
     if (!showUnmatchedOnly) {
@@ -43,6 +49,7 @@ export function SongsPanel({
   }, [playlistGroups, showUnmatchedOnly])
 
   const handleDownloadUnmatched = () => {
+    setDownloadFeedback(null)
     const unmatchedSongs: Array<{
       title: string
       artist: string
@@ -64,9 +71,17 @@ export function SongsPanel({
     })
 
     if (unmatchedSongs.length === 0) {
-      alert("No unmatched songs to download")
+      setDownloadFeedback({
+        message: "No unmatched songs to download",
+        variant: "error",
+      })
       return
     }
+
+    setDownloadFeedback({
+      message: "Download started",
+      variant: "success",
+    })
 
     const jsonString = JSON.stringify(unmatchedSongs, null, 2)
     const blob = new Blob([jsonString], { type: "application/json" })
@@ -145,26 +160,39 @@ export function SongsPanel({
                 Unmatched Songs
               </span>
             </label>
-            <button
-              onClick={handleDownloadUnmatched}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-              title="Download unmatched songs as JSON"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="flex flex-col items-end gap-1 text-right">
+              <button
+                onClick={handleDownloadUnmatched}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                title="Download unmatched songs as JSON"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
-              Download
-            </button>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+                Download
+              </button>
+              {downloadFeedback && (
+                <p
+                  className={`text-xs ${
+                    downloadFeedback.variant === "error"
+                      ? "text-red-600 dark:text-red-400"
+                      : "text-emerald-600 dark:text-emerald-300"
+                  }`}
+                >
+                  {downloadFeedback.message}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>

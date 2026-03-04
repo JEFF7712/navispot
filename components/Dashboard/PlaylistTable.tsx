@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
 import { Calendar } from "@/components/ui/calendar"
@@ -391,6 +391,24 @@ export function PlaylistTable({
     dateAfterFilter,
     dateBeforeFilter,
   ].filter(Boolean).length
+
+  const handleRowToggle = useCallback((id: string) => {
+    if (isExporting) return
+    onToggleSelection(id)
+  }, [isExporting, onToggleSelection])
+
+  const handleRowKeyDown = useCallback(
+    (id: string, event: KeyboardEvent<HTMLTableRowElement>) => {
+      const target = event.target as HTMLElement
+      if (target && target.closest("input,button,a,select,textarea")) return
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        handleRowToggle(id)
+      }
+    },
+    [handleRowToggle],
+  )
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -798,17 +816,21 @@ export function PlaylistTable({
                 </tr>
               ) : (
                 items.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    onClick={() => !isExporting && onToggleSelection(item.id)}
-                    className={`cursor-pointer transition-colors ${
-                      selectedIds.has(item.id)
-                        ? "bg-blue-50/50 dark:bg-blue-900/10"
-                        : index % 2 === 0
-                          ? "bg-white dark:bg-zinc-900"
-                          : "bg-zinc-50 dark:bg-zinc-800/50"
-                    } hover:bg-blue-50/30 dark:hover:bg-blue-900/5`}
-                  >
+                <tr
+                  key={item.id}
+                  tabIndex={isExporting ? -1 : 0}
+                  role="button"
+                  aria-pressed={selectedIds.has(item.id)}
+                  onClick={() => handleRowToggle(item.id)}
+                  onKeyDown={(event) => handleRowKeyDown(item.id, event)}
+                  className={`cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/50 ${
+                    selectedIds.has(item.id)
+                      ? "bg-blue-50/50 dark:bg-blue-900/10"
+                      : index % 2 === 0
+                        ? "bg-white dark:bg-zinc-900"
+                        : "bg-zinc-50 dark:bg-zinc-800/50"
+                  } hover:bg-blue-50/30 dark:hover:bg-blue-900/5`}
+                >
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"

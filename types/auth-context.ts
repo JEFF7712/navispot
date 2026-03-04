@@ -38,7 +38,3 @@ export interface AuthContextType {
   clearLidarrCredentials: () => void;
   isLoading: boolean;
 }
-
-export const SPOTIFY_STORAGE_KEY = 'navispot_spotify_auth';
-export const NAVIDROME_STORAGE_KEY = 'navispot_navidrome_auth';
-export const LIDARR_STORAGE_KEY = 'navispot_lidarr_auth';

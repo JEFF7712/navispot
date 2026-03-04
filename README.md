@@ -81,14 +81,14 @@ Unmatched tracks can be exported as JSON for later addition to Navidrome.
 # Clone & install
 git clone https://github.com/yourusername/navispot-plist.git
 cd navispot-plist
-bun install
+pnpm install
 
 # Configure
 cp .env.example .env.local
 # Edit .env.local with your credentials
 
 # Run
-bun dev
+pnpm dev
 ```
 
 ### Testing
@@ -110,6 +110,9 @@ pnpm test -t "returns matched"
 2. Add `http://localhost:3000/api/auth/callback` to Redirect URIs
 3. Copy Client ID & Secret to `.env.local`
 
+Note: Navidrome and Lidarr credentials are kept in memory only and are cleared
+on refresh/reload.
+
 ---
 
 ## 📦 Deployment
@@ -125,6 +128,7 @@ docker compose up -d
 ```env
 SPOTIFY_REDIRECT_URI=https://your-domain.com/api/auth/callback
 NEXT_PUBLIC_APP_URL=https://your-domain.com
+SPOTIFY_TOKEN_COOKIE_SECRET=your_strong_random_secret
 ```
 
 Update Spotify Dashboard with your production redirect URI.

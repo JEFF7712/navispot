@@ -66,8 +66,8 @@ This file is optimized for practical implementation behavior.
 
 ## Environment and secrets
 - Copy `.env.example` to `.env.local` for local development.
-- Required vars: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI`, `NEXT_PUBLIC_APP_URL`.
-- Navidrome credentials are entered in UI and stored client-side.
+- Required vars: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REDIRECT_URI`, `NEXT_PUBLIC_APP_URL`, `SPOTIFY_TOKEN_COOKIE_SECRET`.
+- Navidrome/Lidarr credentials are entered in UI and kept in in-memory React state (not persisted).
 - Never commit secrets, tokens, `.env*`, or exported credential payloads.
 
 ## Architectural boundaries
