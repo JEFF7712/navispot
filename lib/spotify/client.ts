@@ -46,7 +46,7 @@ export class SpotifyClient {
 
     while (true) {
       const response = await this.getPlaylistTracks(playlistId, limit, offset, signal);
-      allTracks.push(...response.items);
+      allTracks.push(...(response.items ?? []));
 
       if (!response.next) break;
       offset += limit;
@@ -72,7 +72,7 @@ export class SpotifyClient {
 
     while (true) {
       const response = await this.getSavedTracks(limit, offset, signal);
-      allTracks.push(...response.items);
+      allTracks.push(...(response.items ?? []));
 
       if (!response.next) break;
       offset += limit;
@@ -96,7 +96,7 @@ export class SpotifyClient {
 
     while (true) {
       const response = await this.getPlaylists(limit, offset, signal, bypassCache);
-      allPlaylists.push(...response.items);
+      allPlaylists.push(...(response.items ?? []));
 
       if (!response.next) break;
       offset += limit;
