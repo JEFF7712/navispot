@@ -1,10 +1,11 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { AuthContextType, SpotifyAuthState, NavidromeAuthState, SPOTIFY_STORAGE_KEY, NAVIDROME_STORAGE_KEY } from '@/types/auth-context';
+import { AuthContextType, SpotifyAuthState, NavidromeAuthState, LidarrAuthState, SPOTIFY_STORAGE_KEY, NAVIDROME_STORAGE_KEY, LIDARR_STORAGE_KEY } from '@/types/auth-context';
 import { SpotifyToken, SpotifyUser } from '@/types/spotify-auth';
 import { NavidromeCredentials } from '@/types/navidrome';
 import { NavidromeApiClient } from '@/lib/navidrome/client';
+import { LidarrApiClient, LidarrCredentials } from '@/lib/lidarr/client';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -21,6 +22,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error: null,
     token: null,
     clientId: null,
+  });
+  const [lidarr, setLidarr] = useState<LidarrAuthState>({
+    isConnected: false,
+    credentials: null,
+    version: null,
+    error: null,
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -173,6 +180,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await testNavidromeConnection({ url: parsed.url, username: parsed.username, password: parsed.password });
       }
 
+      const storedLidarr = localStorage.getItem(LIDARR_STORAGE_KEY);
+      if (storedLidarr) {
+        const parsed = JSON.parse(storedLidarr);
+        setLidarr((prev) => ({
+          ...prev,
+          credentials: { url: parsed.url, apiKey: parsed.apiKey },
+        }));
+        await setLidarrCredentials({ url: parsed.url, apiKey: parsed.apiKey });
+      }
+
       if (!storedSpotify) {
         const response = await fetch('/api/auth/session');
         const data = await response.json();
@@ -199,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [testNavidromeConnection, refreshSpotifyTokenFromStorage]);
+  }, [testNavidromeConnection, refreshSpotifyTokenFromStorage, setLidarrCredentials]);
 
   useEffect(() => {
     loadStoredAuth();
@@ -341,15 +358,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const setLidarrCredentials = useCallback(async (credentials: LidarrCredentials): Promise<boolean> => {
+    setLidarr((prev) => ({ ...prev, error: null, credentials }));
+
+    try {
+      const client = new LidarrApiClient(credentials.url, credentials.apiKey);
+      const result = await client.ping();
+
+      if (!result.success) {
+        setLidarr((prev) => ({
+          ...prev,
+          isConnected: false,
+          version: null,
+          error: result.error || 'Connection failed',
+        }));
+        return false;
+      }
+
+      localStorage.setItem(LIDARR_STORAGE_KEY, JSON.stringify({
+        url: credentials.url,
+        apiKey: credentials.apiKey,
+        version: result.version,
+      }));
+
+      setLidarr((prev) => ({
+        ...prev,
+        isConnected: true,
+        version: result.version || null,
+        error: null,
+      }));
+
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect';
+      setLidarr((prev) => ({
+        ...prev,
+        isConnected: false,
+        version: null,
+        error: errorMessage,
+      }));
+      return false;
+    }
+  }, []);
+
+  const clearLidarrCredentials = useCallback(() => {
+    localStorage.removeItem(LIDARR_STORAGE_KEY);
+    setLidarr({
+      isConnected: false,
+      credentials: null,
+      version: null,
+      error: null,
+    });
+  }, []);
+
   const value: AuthContextType = {
     spotify,
     navidrome,
+    lidarr,
     spotifyLogin,
     spotifyLogout,
     refreshSpotifyToken,
     setNavidromeCredentials,
     testNavidromeConnection,
     clearNavidromeCredentials,
+    setLidarrCredentials,
+    clearLidarrCredentials,
     isLoading,
   };
 

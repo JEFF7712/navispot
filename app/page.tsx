@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth/auth-context"
 import { Dashboard } from "@/components/Dashboard"
 import { SpotifyConnectButton } from "@/components/spotify-connect-button"
 import { NavidromeCredentialsForm } from "@/components/navidrome-credentials-form"
+import { LidarrCredentialsForm } from "@/components/lidarr-credentials-form"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import Image from "next/image"
 import NavispotLogo from "@/public/navispot.png"
@@ -34,7 +35,7 @@ function GlobalErrorHandler() {
 }
 
 export default function Home() {
-  const { isLoading, spotify, navidrome } = useAuth()
+  const { isLoading, spotify, navidrome, lidarr } = useAuth()
 
   if (isLoading) {
     return (
@@ -47,7 +48,7 @@ export default function Home() {
     )
   }
 
-  const isAuthenticated = spotify.isAuthenticated && navidrome.isConnected
+  const isAuthenticated = navidrome.isConnected
 
   if (isAuthenticated) {
     return (
@@ -111,8 +112,12 @@ export default function Home() {
             </p>
           </div>
 
-          <div>
+          <div className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
             <NavidromeCredentialsForm />
+          </div>
+
+          <div>
+            <LidarrCredentialsForm />
           </div>
         </div>
       </main>

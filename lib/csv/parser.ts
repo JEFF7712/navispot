@@ -18,10 +18,13 @@ export interface CsvPlaylist {
  * Also supports simpler CSV with just: Track Name, Artist Name(s), Album Name
  */
 export function parseCsvToTracks(csvText: string): SpotifyTrack[] {
-  const lines = csvText.split(/\r?\n/).filter((l) => l.trim())
+  const normalizedCsvText = csvText.replace(/^\uFEFF/, "")
+  const lines = normalizedCsvText.split(/\r?\n/).filter((l) => l.trim())
   if (lines.length < 2) return []
 
-  const headers = parseCSVLine(lines[0]).map((h) => h.trim().toLowerCase())
+  const headers = parseCSVLine(lines[0]).map((h) =>
+    h.replace(/^\uFEFF/, "").trim().toLowerCase(),
+  )
 
   // Map column names to indices
   const col = (names: string[]): number => {
@@ -54,25 +57,24 @@ export function parseCsvToTracks(csvText: string): SpotifyTrack[] {
     if (!name) continue
 
     const artistStr = artistCol !== -1 ? values[artistCol]?.trim() || "" : ""
-    const artists = artistStr
-      ? artistStr.split(/,\s*/).map((a, idx) => ({
-          id: `csv-artist-${i}-${idx}`,
-          name: a.trim(),
-        }))
-      : [{ id: `csv-artist-${i}-0`, name: "Unknown" }]
+    const artistNames = artistStr
+      ? artistStr.split(/,\s*/).map((name) => name.trim()).filter(Boolean)
+      : []
+    const artists =
+      artistNames.length > 0
+        ? artistNames.map((artistName, idx) => ({
+            id: `csv-artist-${i}-${idx}`,
+            name: artistName,
+          }))
+        : [{ id: `csv-artist-${i}-0`, name: "Unknown" }]
 
     const albumName = albumCol !== -1 ? values[albumCol]?.trim() || "" : ""
-    const durationMs = durationCol !== -1 ? parseInt(values[durationCol]) || 0 : 0
+    const durationMs =
+      durationCol !== -1 ? parseDurationMs(values[durationCol]) : 0
     const isrc = isrcCol !== -1 ? values[isrcCol]?.trim() || undefined : undefined
 
-    // Extract Spotify ID from URI (spotify:track:XXXX) or use as-is
-    let spotifyId = `csv-${i}`
-    if (uriCol !== -1 && values[uriCol]) {
-      const uri = values[uriCol].trim()
-      const match = uri.match(/spotify:track:(\w+)/)
-      if (match) spotifyId = match[1]
-      else if (uri && !uri.includes(":")) spotifyId = uri
-    }
+    const spotifyUri = uriCol !== -1 ? values[uriCol] : undefined
+    const spotifyId = extractSpotifyTrackId(spotifyUri, `csv-${i}`)
 
     const releaseDate = releaseDateCol !== -1 ? values[releaseDateCol]?.trim() || "" : ""
 
@@ -100,6 +102,57 @@ export function parseCsvToTracks(csvText: string): SpotifyTrack[] {
  */
 export function playlistNameFromFilename(filename: string): string {
   return filename.replace(/\.csv$/i, "").trim() || "Imported Playlist"
+}
+
+function parseDurationMs(rawValue: string | undefined): number {
+  if (!rawValue) return 0
+
+  const value = rawValue.trim()
+  if (!value) return 0
+
+  if (/^\d+$/.test(value)) {
+    return Number.parseInt(value, 10) || 0
+  }
+
+  const parts = value.split(":").map((part) => Number.parseInt(part, 10))
+  if (parts.some((part) => Number.isNaN(part))) {
+    return 0
+  }
+
+  if (parts.length === 2) {
+    const [minutes, seconds] = parts
+    return (minutes * 60 + seconds) * 1000
+  }
+
+  if (parts.length === 3) {
+    const [hours, minutes, seconds] = parts
+    return (hours * 3600 + minutes * 60 + seconds) * 1000
+  }
+
+  return 0
+}
+
+function extractSpotifyTrackId(uriValue: string | undefined, fallbackId: string): string {
+  if (!uriValue) return fallbackId
+
+  const uri = uriValue.trim()
+  if (!uri) return fallbackId
+
+  const uriMatch = uri.match(/spotify:track:([a-zA-Z0-9]+)/i)
+  if (uriMatch?.[1]) {
+    return uriMatch[1]
+  }
+
+  const urlMatch = uri.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/i)
+  if (urlMatch?.[1]) {
+    return urlMatch[1]
+  }
+
+  if (/^[a-zA-Z0-9]{22}$/.test(uri)) {
+    return uri
+  }
+
+  return fallbackId
 }
 
 /**

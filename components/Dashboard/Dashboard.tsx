@@ -49,6 +49,7 @@ import Image from "next/image"
 import NavispotLogo from "@/public/navispot.png"
 import { CsvUpload } from "@/components/Dashboard/CsvUpload"
 import { CsvPlaylist } from "@/lib/csv/parser"
+import { LidarrApiClient } from "@/lib/lidarr/client"
 
 const LIKED_SONGS_ID = "liked-songs"
 
@@ -84,7 +85,7 @@ function formatDuration(ms: number): string {
 }
 
 export function Dashboard() {
-  const { spotify, navidrome } = useAuth()
+  const { spotify, navidrome, lidarr } = useAuth()
   const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([])
   const [tableItems, setTableItems] = useState<PlaylistTableItem[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -845,6 +846,7 @@ export function Dashboard() {
     const abortController = new AbortController()
     abortControllerRef.current = abortController
     const signal = abortController.signal
+    const allExportedArtists = new Set<string>()
 
     setSelectedPlaylistsStats(
       itemsToExport.map((item) => ({
@@ -935,6 +937,11 @@ export function Dashboard() {
           const hasNavidromePlaylist = !!cachedData?.navidromePlaylistId
           useDifferentialMatching = hasNavidromePlaylist
         }
+
+        // Collect artist names for Lidarr sync
+        tracks.forEach((t) =>
+          t.artists?.forEach((a) => allExportedArtists.add(a.name)),
+        )
 
         progress = updateProgress(progress, {
           progress: { current: 0, total: tracks.length, percent: 0 },
@@ -1404,6 +1411,63 @@ export function Dashboard() {
         )
 
         if (i === itemsToExport.length - 1) {
+          // Sync artists to Lidarr if connected
+          if (lidarr.isConnected && lidarr.credentials) {
+            try {
+              const lidarrClient = new LidarrApiClient(
+                lidarr.credentials.url,
+                lidarr.credentials.apiKey,
+              )
+
+              if (allExportedArtists.size > 0) {
+                const existingArtists = await lidarrClient.getExistingArtists()
+                const existingNames = new Set(
+                  existingArtists.map((a) => a.artistName.toLowerCase()),
+                )
+
+                const rootFolders = await lidarrClient.getRootFolders()
+                const qualityProfiles = await lidarrClient.getQualityProfiles()
+                const metadataProfiles = await lidarrClient.getMetadataProfiles()
+
+                if (rootFolders.length > 0 && qualityProfiles.length > 0 && metadataProfiles.length > 0) {
+                  const rootFolder = rootFolders[0].path
+                  const qualityProfileId = qualityProfiles[0].id
+                  const metadataProfileId = metadataProfiles[0].id
+
+                  let added = 0
+                  for (const name of allExportedArtists) {
+                    if (existingNames.has(name.toLowerCase())) continue
+
+                    try {
+                      const results = await lidarrClient.lookupArtist(name)
+                      if (results.length > 0) {
+                        await lidarrClient.addArtist({
+                          foreignArtistId: results[0].foreignArtistId,
+                          artistName: results[0].artistName,
+                          qualityProfileId,
+                          metadataProfileId,
+                          rootFolderPath: rootFolder,
+                          monitored: true,
+                          addOptions: { searchForMissingAlbums: true },
+                        })
+                        existingNames.add(results[0].artistName.toLowerCase())
+                        added++
+                      }
+                    } catch (lidarrErr) {
+                      console.warn(`Failed to add artist "${name}" to Lidarr:`, lidarrErr)
+                    }
+                  }
+
+                  if (added > 0) {
+                    console.log(`Added ${added} new artists to Lidarr`)
+                  }
+                }
+              }
+            } catch (lidarrErr) {
+              console.warn("Lidarr sync failed:", lidarrErr)
+            }
+          }
+
           setShowSuccess(true)
           setTimeout(() => {
             setShowSuccess(false)
