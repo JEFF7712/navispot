@@ -103,7 +103,7 @@ export function usePlaylistTable({
           comparison = a.name.localeCompare(b.name);
           break;
         case 'tracks':
-          comparison = a.tracks.total - b.tracks.total;
+          comparison = (a.tracks?.total ?? 0) - (b.tracks?.total ?? 0);
           break;
         case 'owner':
           comparison = a.owner.display_name.localeCompare(b.owner.display_name);

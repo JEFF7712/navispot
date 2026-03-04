@@ -213,7 +213,7 @@ export function Dashboard() {
 
       // Capture old track counts AND snapshot IDs for comparison
       const oldTrackCounts = new Map(
-        playlists.map(p => [p.id, p.tracks.total])
+        playlists.map(p => [p.id, p.tracks?.total ?? 0])
       )
       const oldSnapshots = new Map(
         playlists.map(p => [p.id, p.snapshot_id])
@@ -225,7 +225,7 @@ export function Dashboard() {
       const changedPlaylistIds = fetchedPlaylists
         .filter(p => oldSnapshots.has(p.id))
         .filter(p => {
-          const trackCountChanged = oldTrackCounts.get(p.id) !== p.tracks.total
+          const trackCountChanged = oldTrackCounts.get(p.id) !== (p.tracks?.total ?? 0)
           const snapshotChanged = oldSnapshots.get(p.id) !== p.snapshot_id
           return trackCountChanged || snapshotChanged
         })
@@ -486,7 +486,7 @@ export function Dashboard() {
         selectedPlaylists.push({
           id: p.id,
           name: p.name,
-          total: p.tracks.total,
+          total: p.tracks?.total ?? 0,
           matched: cachedData?.statistics.matched ?? 0,
           unmatched: cachedData?.statistics.unmatched ?? 0,
           exported: cachedData?.statistics.matched ?? 0,
@@ -689,7 +689,7 @@ export function Dashboard() {
           comparison = a.name.localeCompare(b.name)
           break
         case "tracks":
-          comparison = a.tracks.total - b.tracks.total
+          comparison = (a.tracks?.total ?? 0) - (b.tracks?.total ?? 0)
           break
         case "owner":
           comparison = a.owner.display_name.localeCompare(b.owner.display_name)
@@ -808,7 +808,7 @@ export function Dashboard() {
         unmatched: 0,
         exported: 0,
         failed: 0,
-        total: item.tracks.total,
+        total: item.tracks?.total ?? 0,
         status: "pending" as const,
         progress: 0,
       })),
@@ -1426,7 +1426,7 @@ export function Dashboard() {
     playlists
       .filter((p) => selectedIds.has(p.id))
       .forEach((p) => {
-        result.push({ name: p.name, trackCount: p.tracks.total })
+        result.push({ name: p.name, trackCount: p.tracks?.total ?? 0 })
       })
 
     return result
