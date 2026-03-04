@@ -36,6 +36,108 @@ export interface DiffResult {
 
 const STORAGE_KEY_PREFIX = 'navispot-playlist-export-';
 const DEFAULT_MAX_AGE_DAYS = 90;
+const VALID_MATCH_STATUSES: ReadonlySet<TrackExportStatus['status']> = new Set([
+  'matched',
+  'ambiguous',
+  'unmatched',
+]);
+const VALID_MATCH_STRATEGIES: ReadonlySet<TrackExportStatus['matchStrategy']> =
+  new Set(['isrc', 'fuzzy', 'strict', 'none']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isValidDateString(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0) {
+    return false;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp);
+}
+
+function isTrackExportStatus(value: unknown): value is TrackExportStatus {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const status = value.status;
+  const matchStrategy = value.matchStrategy;
+
+  return (
+    typeof value.spotifyTrackId === 'string' &&
+    (value.navidromeSongId === undefined || typeof value.navidromeSongId === 'string') &&
+    typeof status === 'string' &&
+    VALID_MATCH_STATUSES.has(status as TrackExportStatus['status']) &&
+    typeof matchStrategy === 'string' &&
+    VALID_MATCH_STRATEGIES.has(matchStrategy as TrackExportStatus['matchStrategy']) &&
+    typeof value.matchScore === 'number' &&
+    Number.isFinite(value.matchScore) &&
+    isValidDateString(value.matchedAt)
+  );
+}
+
+function isPlaylistExportStatistics(
+  value: unknown,
+): value is PlaylistExportData['statistics'] {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.total === 'number' &&
+    Number.isFinite(value.total) &&
+    value.total >= 0 &&
+    typeof value.matched === 'number' &&
+    Number.isFinite(value.matched) &&
+    value.matched >= 0 &&
+    typeof value.unmatched === 'number' &&
+    Number.isFinite(value.unmatched) &&
+    value.unmatched >= 0 &&
+    typeof value.ambiguous === 'number' &&
+    Number.isFinite(value.ambiguous) &&
+    value.ambiguous >= 0
+  );
+}
+
+export function isPlaylistExportData(value: unknown): value is PlaylistExportData {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    typeof value.spotifyPlaylistId !== 'string' ||
+    typeof value.spotifySnapshotId !== 'string' ||
+    typeof value.playlistName !== 'string' ||
+    (value.navidromePlaylistId !== undefined &&
+      typeof value.navidromePlaylistId !== 'string') ||
+    !isValidDateString(value.exportedAt) ||
+    typeof value.trackCount !== 'number' ||
+    !Number.isFinite(value.trackCount) ||
+    value.trackCount < 0 ||
+    !isRecord(value.tracks) ||
+    !isPlaylistExportStatistics(value.statistics)
+  ) {
+    return false;
+  }
+
+  for (const trackStatus of Object.values(value.tracks)) {
+    if (!isTrackExportStatus(trackStatus)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function parsePlaylistExportData(value: string): PlaylistExportData | undefined {
+  try {
+    const parsed = JSON.parse(value);
+    return isPlaylistExportData(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function getStorageKey(playlistId: string): string {
   return `${STORAGE_KEY_PREFIX}${playlistId}`;
@@ -64,7 +166,17 @@ export function loadPlaylistExportData(playlistId: string): PlaylistExportData |
   try {
     const key = getStorageKey(playlistId);
     const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : undefined;
+    if (!data) {
+      return undefined;
+    }
+
+    const parsed = parsePlaylistExportData(data);
+    if (!parsed) {
+      localStorage.removeItem(key);
+      return undefined;
+    }
+
+    return parsed;
   } catch (error) {
     console.error('Failed to load playlist export data:', error);
     return undefined;
@@ -91,17 +203,25 @@ export function deletePlaylistExportData(playlistId: string): void {
 export function getAllExportData(): Map<string, PlaylistExportData> {
   const result = new Map<string, PlaylistExportData>();
   try {
+    const keysToRemove: string[] = [];
+
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key?.startsWith(STORAGE_KEY_PREFIX)) {
         const data = localStorage.getItem(key);
         if (data) {
-          const parsed = JSON.parse(data);
-          const playlistId = key.slice(STORAGE_KEY_PREFIX.length);
-          result.set(playlistId, parsed);
+          const parsed = parsePlaylistExportData(data);
+          if (parsed) {
+            const playlistId = key.slice(STORAGE_KEY_PREFIX.length);
+            result.set(playlistId, parsed);
+          } else {
+            keysToRemove.push(key);
+          }
         }
       }
     }
+
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
   } catch (error) {
     console.error('Failed to get all export data:', error);
   }
@@ -165,13 +285,14 @@ export function clearExpiredCache(maxAgeDays: number = DEFAULT_MAX_AGE_DAYS): vo
       if (key?.startsWith(STORAGE_KEY_PREFIX)) {
         const data = localStorage.getItem(key);
         if (data) {
-          try {
-            const parsed = JSON.parse(data) as PlaylistExportData;
-            const exportedAt = new Date(parsed.exportedAt).getTime();
-            if (exportedAt < cutoffTime) {
-              keysToRemove.push(key);
-            }
-          } catch {
+          const parsed = parsePlaylistExportData(data);
+          if (!parsed) {
+            keysToRemove.push(key);
+            continue;
+          }
+
+          const exportedAt = new Date(parsed.exportedAt).getTime();
+          if (exportedAt < cutoffTime) {
             keysToRemove.push(key);
           }
         }

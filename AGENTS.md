@@ -41,6 +41,8 @@ This file is optimized for practical implementation behavior.
 - Lint one changed file: `corepack pnpm eslint path/to/file.tsx`
 - Lint one changed folder: `corepack pnpm eslint components/Dashboard`
 - Type-check only: `corepack pnpm exec tsc --noEmit`
+- Run all tests: `corepack pnpm test`
+- Run single test file: `corepack pnpm test lib/matching/fuzzy.test.ts`
 - Local run command: `corepack pnpm dev`
 
 ### Targeted quality commands
@@ -50,17 +52,17 @@ This file is optimized for practical implementation behavior.
 - Full integration validation: `pnpm build`
 
 ### Test status (important)
-- There is currently no test framework configured.
-- There are no `*.test.*` or `*.spec.*` files.
-- Run all tests: not available yet.
-- Run a single test: not available yet.
-- If tests are added, add scripts in `package.json` and document single-test usage.
+- Test framework: Vitest (`vitest` / `pnpm test`).
+- Current test coverage starts with matching and export-cache unit tests.
+- Run all tests: `pnpm test`.
+- Run a single test file: `pnpm test lib/matching/strict-matcher.test.ts`.
+- Run a single test case by name: `pnpm test -t "returns matched"`.
 
 ### If tests are added later (recommended pattern)
 - Add scripts such as `test` and `test:watch`.
 - Ensure single test execution works, for example:
-  - `pnpm test -- path/to/file.test.ts`
-  - `pnpm test -- path/to/file.test.ts -t "case name"`
+  - `pnpm test path/to/file.test.ts`
+  - `pnpm test -t "case name"`
 
 ## Environment and secrets
 - Copy `.env.example` to `.env.local` for local development.

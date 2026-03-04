@@ -91,6 +91,19 @@ cp .env.example .env.local
 bun dev
 ```
 
+### Testing
+
+```bash
+# Run all tests
+pnpm test
+
+# Run a single test file
+pnpm test lib/matching/strict-matcher.test.ts
+
+# Run a single test case by name
+pnpm test -t "returns matched"
+```
+
 **Spotify Setup:**
 
 1. Create app at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
@@ -120,7 +133,7 @@ Update Spotify Dashboard with your production redirect URI.
 
 This repository includes `.github/workflows/ci-cd.yml`:
 
-- **CI** (pull requests + `main` pushes): installs dependencies, runs lint, and runs a production build.
+- **CI** (pull requests + `main` pushes): installs dependencies, runs lint, runs tests, and runs a production build.
 - **CD** (`main` pushes + manual dispatch): builds the deploy image using:
 
 ```bash

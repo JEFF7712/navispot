@@ -47,6 +47,7 @@ import { CsvUpload } from "@/components/Dashboard/CsvUpload"
 import { CsvPlaylist } from "@/lib/csv/parser"
 import { LidarrApiClient } from "@/lib/lidarr/client"
 import { createLidarrExporter, type LidarrSyncResult } from "@/lib/export/lidarr-exporter"
+import { ConnectionsSettingsDialog } from "@/components/ConnectionsSettingsDialog"
 
 const LIKED_SONGS_ID = "liked-songs"
 
@@ -140,6 +141,7 @@ export function Dashboard() {
   const [playlistCreatedDates, setPlaylistCreatedDates] = useState<Map<string, string>>(new Map())
   const [fetchingDates, setFetchingDates] = useState(false)
   const [csvPlaylists, setCsvPlaylists] = useState<CsvPlaylist[]>([])
+  const [showConnectionsDialog, setShowConnectionsDialog] = useState(false)
 
   const isExportingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -1579,6 +1581,33 @@ export function Dashboard() {
 
         {/* CSV Import + Export Button - Right Side */}
         <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setShowConnectionsDialog(true)}
+          disabled={isExporting}
+          className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          aria-label="Connections settings"
+        >
+          <svg
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        </button>
         <CsvUpload onPlaylistsImported={handleCsvImport} disabled={isExporting} />
         <button
           onClick={
@@ -1799,7 +1828,10 @@ export function Dashboard() {
         onConfirm={handleStartExport}
         playlists={confirmationPlaylists}
       />
-      
+      <ConnectionsSettingsDialog
+        isOpen={showConnectionsDialog}
+        onClose={() => setShowConnectionsDialog(false)}
+      />
       <ExportLayoutManager
         selectedPlaylistsSection={selectedPlaylistsSection}
         unmatchedSongsSection={songsSection}

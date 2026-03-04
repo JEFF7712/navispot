@@ -4,7 +4,13 @@ import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/lib/auth/auth-context"
 import { NavidromeCredentials } from "@/types/navidrome"
 
-export function NavidromeCredentialsForm() {
+interface NavidromeCredentialsFormProps {
+  allowEditWhenConnected?: boolean
+}
+
+export function NavidromeCredentialsForm({
+  allowEditWhenConnected = false,
+}: NavidromeCredentialsFormProps) {
   const {
     navidrome,
     setNavidromeCredentials,
@@ -24,6 +30,7 @@ export function NavidromeCredentialsForm() {
   }>({})
   const [isConnecting, setIsConnecting] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
 
   useEffect(() => {
     if (navidrome.credentials) {
@@ -71,7 +78,9 @@ export function NavidromeCredentialsForm() {
     setIsConnecting(true)
     try {
       const success = await setNavidromeCredentials(formData)
-      if (!success) {
+      if (success) {
+        setIsEditing(false)
+      } else {
         setLocalError(navidrome.error || "Connection failed")
       }
     } catch {
@@ -85,8 +94,27 @@ export function NavidromeCredentialsForm() {
     setFormData({ url: "", username: "", password: "" })
     setErrors({})
     setLocalError(null)
+    setIsEditing(false)
     clearNavidromeCredentials()
   }
+
+  const handleCancelEdit = () => {
+    if (navidrome.credentials) {
+      setFormData({
+        url: navidrome.credentials.url,
+        username: navidrome.credentials.username,
+        password: navidrome.credentials.password,
+      })
+    }
+    setErrors({})
+    setLocalError(null)
+    setIsEditing(false)
+  }
+
+  const inputsDisabled =
+    (navidrome.isConnected && !allowEditWhenConnected) ||
+    (navidrome.isConnected && allowEditWhenConnected && !isEditing) ||
+    isConnecting
 
   if (isLoading) {
     return (
@@ -153,7 +181,7 @@ export function NavidromeCredentialsForm() {
               setFormData((prev) => ({ ...prev, url: e.target.value }))
             }
             placeholder="https://your-navidrome-server.com"
-            disabled={navidrome.isConnected || isConnecting}
+            disabled={inputsDisabled}
             className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-green-500 dark:focus:ring-green-500"
           />
           {errors.url && (
@@ -178,7 +206,7 @@ export function NavidromeCredentialsForm() {
               setFormData((prev) => ({ ...prev, username: e.target.value }))
             }
             placeholder="your-username"
-            disabled={navidrome.isConnected || isConnecting}
+            disabled={inputsDisabled}
             className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-green-500 dark:focus:ring-green-500"
           />
           {errors.username && (
@@ -204,13 +232,13 @@ export function NavidromeCredentialsForm() {
                 setFormData((prev) => ({ ...prev, password: e.target.value }))
               }
               placeholder="••••••••"
-              disabled={navidrome.isConnected || isConnecting}
+              disabled={inputsDisabled}
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm placeholder:text-zinc-400 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-green-500 dark:focus:ring-green-500"
             />
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
-              disabled={navidrome.isConnected || isConnecting}
+              disabled={inputsDisabled}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {showPassword ? (
@@ -257,16 +285,73 @@ export function NavidromeCredentialsForm() {
           )}
         </div>
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex flex-wrap gap-3 pt-2">
           {navidrome.isConnected ? (
-            <button
-              type="button"
-              onClick={handleDisconnect}
-              disabled={isConnecting}
-              className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Disconnect
-            </button>
+            allowEditWhenConnected && isEditing ? (
+              <>
+                <button
+                  type="submit"
+                  disabled={isConnecting}
+                  className="flex-1 rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50 disabled:hover:bg-green-700 hover:cursor-pointer"
+                >
+                  {isConnecting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg
+                        className="h-4 w-4 animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Saving...
+                    </span>
+                  ) : (
+                    "Save"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={isConnecting}
+                  className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                {allowEditWhenConnected && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    disabled={isConnecting}
+                    className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Edit
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  disabled={isConnecting}
+                  className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Disconnect
+                </button>
+              </>
+            )
           ) : (
             <>
               <button
