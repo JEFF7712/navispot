@@ -115,16 +115,52 @@ export class NavidromeApiClient {
     }
   }
 
-  private async _ensureAuthenticated(): Promise<void> {
+  private async _ensureAuthenticated(signal?: AbortSignal): Promise<void> {
     const hasToken = this._ndToken != null && this._ndToken.length > 0;
     const hasClientId = this._ndClientId != null && this._ndClientId.length > 0;
     if (hasToken && hasClientId) {
       return;
     }
-    const result = await this.login(this.username, this.password);
+    const result = await this.login(this.username, this.password, signal);
     if (!result.success) {
       throw new Error(`Authentication failed: ${result.error}`);
     }
+  }
+
+  /**
+   * Native API fetch with 401 retry. On 401, re-login and retry once.
+   */
+  private async _fetchNative(
+    method: string,
+    path: string,
+    body?: string,
+    signal?: AbortSignal
+  ): Promise<Response> {
+    await this._ensureAuthenticated(signal);
+    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      'x-nd-authorization': `Bearer ${this._ndToken}`,
+      'x-nd-client-unique-id': `${this._ndClientId}`,
+    };
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
+    const doFetch = () =>
+      fetch(url, {
+        method,
+        headers,
+        body: body ?? undefined,
+        signal,
+      });
+    let response = await doFetch();
+    if (response.status === 401) {
+      const result = await this.login(this.username, this.password, signal);
+      if (!result.success) {
+        throw new Error(`Re-authentication failed: ${result.error}`);
+      }
+      response = await doFetch();
+    }
+    return response;
   }
 
   private _buildNativeUrl(endpoint: string, params: Record<string, string | number | undefined> = {}): string {
@@ -163,20 +199,8 @@ export class NavidromeApiClient {
   }
 
   private async _makeNativeRequest<T>(endpoint: string, params: Record<string, string | number | undefined> = {}, signal?: AbortSignal): Promise<T> {
-    await this._ensureAuthenticated();
-    
     const url = this._buildNativeUrl(endpoint, params);
-    
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'x-nd-authorization': `Bearer ${this._ndToken}`,
-      'x-nd-client-unique-id': `${this._ndClientId}`,
-    };
-
-    const response = await fetch(url, {
-      headers,
-      signal,
-    });
+    const response = await this._fetchNative('GET', url, undefined, signal);
 
     if (!response.ok) {
       throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
@@ -247,13 +271,27 @@ export class NavidromeApiClient {
     const playlistResponse = await this._makeNativeRequest<NavidromePlaylist>(`/api/playlist/${playlistId}`, {}, signal);
     const playlist = this._mapPlaylist(playlistResponse);
 
-    const tracksResponse = await this._makeNativeRequest<{
-      items: NavidromeNativeSong[];
-    }>(`/api/playlist/${playlistId}/tracks`, { _start: 0, _end: 1000 }, signal);
+    const allTracks: NavidromeNativeSong[] = [];
+    let start = 0;
+    const limit = 500;
+
+    while (true) {
+      const tracksResponse = await this._makeNativeRequest<{
+        items: NavidromeNativeSong[];
+      }>(`/api/playlist/${playlistId}/tracks`, { _start: start, _end: start + limit }, signal);
+      const items = tracksResponse.items || [];
+      if (items.length > 0) {
+        allTracks.push(...items);
+      }
+      if (items.length < limit || allTracks.length >= this._totalCount) {
+        break;
+      }
+      start += limit;
+    }
 
     return {
       playlist,
-      tracks: tracksResponse.items || [],
+      tracks: allTracks,
     };
   }
 
@@ -262,35 +300,34 @@ export class NavidromeApiClient {
     success: boolean;
   }> {
     try {
-      const createResponse = await fetch(`${this.baseUrl}/api/playlist`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-nd-authorization': `Bearer ${this._ndToken}`,
-          'x-nd-client-unique-id': `${this._ndClientId}`,
-        },
-        body: JSON.stringify({ name }),
-        signal,
-      });
+      const createResponse = await this._fetchNative(
+        'POST',
+        `${this.baseUrl}/api/playlist`,
+        JSON.stringify({ name }),
+        signal
+      );
 
       if (!createResponse.ok) {
         return { success: false, id: '' };
       }
 
-      const createData = await createResponse.json() as { id: string };
+      const createData = (await createResponse.json()) as { id: string };
       const playlistId = createData.id;
 
       if (songIds.length > 0) {
-        await fetch(`${this.baseUrl}/api/playlist/${playlistId}/tracks`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-nd-authorization': `Bearer ${this._ndToken}`,
-            'x-nd-client-unique-id': `${this._ndClientId}`,
-          },
-          body: JSON.stringify({ ids: songIds }),
-          signal,
-        });
+        const TRACK_CHUNK_SIZE = 100;
+        for (let i = 0; i < songIds.length; i += TRACK_CHUNK_SIZE) {
+          const chunk = songIds.slice(i, i + TRACK_CHUNK_SIZE);
+          const addTracksResponse = await this._fetchNative(
+            'POST',
+            `${this.baseUrl}/api/playlist/${playlistId}/tracks`,
+            JSON.stringify({ ids: chunk }),
+            signal
+          );
+          if (!addTracksResponse.ok) {
+            return { success: false, id: '' };
+          }
+        }
       }
 
       return { success: true, id: playlistId };
@@ -307,28 +344,32 @@ export class NavidromeApiClient {
   ): Promise<{ success: boolean }> {
     try {
       if (songIdsToAdd.length > 0) {
-        await fetch(`${this.baseUrl}/api/playlist/${playlistId}/tracks`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-nd-authorization': `Bearer ${this._ndToken}`,
-            'x-nd-client-unique-id': `${this._ndClientId}`,
-          },
-          body: JSON.stringify({ ids: songIdsToAdd }),
-          signal,
-        });
+        const TRACK_CHUNK_SIZE = 100;
+        for (let i = 0; i < songIdsToAdd.length; i += TRACK_CHUNK_SIZE) {
+          const chunk = songIdsToAdd.slice(i, i + TRACK_CHUNK_SIZE);
+          const addResponse = await this._fetchNative(
+            'POST',
+            `${this.baseUrl}/api/playlist/${playlistId}/tracks`,
+            JSON.stringify({ ids: chunk }),
+            signal
+          );
+          if (!addResponse.ok) {
+            return { success: false };
+          }
+        }
       }
 
       if (songIdsToRemove && songIdsToRemove.length > 0) {
         const removeParams = songIdsToRemove.map((id) => `id=${id + 1}`).join('&');
-        await fetch(`${this.baseUrl}/api/playlist/${playlistId}/tracks?${removeParams}`, {
-          method: 'DELETE',
-          headers: {
-            'x-nd-authorization': `Bearer ${this._ndToken}`,
-            'x-nd-client-unique-id': `${this._ndClientId}`,
-          },
-          signal,
-        });
+        const removeResponse = await this._fetchNative(
+          'DELETE',
+          `${this.baseUrl}/api/playlist/${playlistId}/tracks?${removeParams}`,
+          undefined,
+          signal
+        );
+        if (!removeResponse.ok) {
+          return { success: false };
+        }
       }
 
       return { success: true };
@@ -619,20 +660,13 @@ export class NavidromeApiClient {
   }
 
   async updatePlaylistComment(playlistId: string, metadata: ExportMetadata, signal?: AbortSignal): Promise<void> {
-    await this._ensureAuthenticated();
-
     const comment = JSON.stringify(metadata);
-    const url = `${this.baseUrl}/api/playlist/${playlistId}`;
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-nd-authorization': `Bearer ${this._ndToken}`,
-        'x-nd-client-unique-id': `${this._ndClientId}`,
-      },
-      body: JSON.stringify({ comment }),
-      signal,
-    });
+    const response = await this._fetchNative(
+      'PATCH',
+      `${this.baseUrl}/api/playlist/${playlistId}`,
+      JSON.stringify({ comment }),
+      signal
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to update playlist comment: ${response.status} ${response.statusText}`);

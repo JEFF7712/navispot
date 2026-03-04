@@ -1,7 +1,5 @@
 "use client"
 
-import { useState } from "react"
-
 export interface SelectedPlaylist {
   id: string
   name: string
@@ -29,6 +27,7 @@ interface SelectedPlaylistsPanelProps {
     total: number
     failed?: number
   }
+  lidarrSyncProgress?: { current: number; total: number } | null
 }
 
 const statusColors = {
@@ -52,23 +51,17 @@ export function SelectedPlaylistsPanel({
   onToggleCheck,
   onToggleCheckAll,
   statistics,
+  lidarrSyncProgress,
 }: SelectedPlaylistsPanelProps) {
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-
   const allChecked =
     selectedPlaylists.length > 0 &&
     selectedPlaylists.every((p) => checkedPlaylistIds.has(p.id))
 
-  const toggleRow = (id: string) => {
-    setExpandedRows((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(id)) {
-        newSet.delete(id)
-      } else {
-        newSet.add(id)
-      }
-      return newSet
-    })
+  const handlePlaylistRowClick = (playlistId: string) => {
+    onPlaylistClick(playlistId)
+    if (!isExporting) {
+      onToggleCheck(playlistId)
+    }
   }
 
   return (
@@ -130,6 +123,16 @@ export function SelectedPlaylistsPanel({
           </div>
         )}
       </div>
+      {lidarrSyncProgress && (
+        <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-orange-50 dark:bg-orange-900/20 flex items-center gap-2">
+          <span className="text-xs font-medium text-orange-800 dark:text-orange-400">
+            Syncing artists to Lidarr...
+          </span>
+          <span className="text-xs text-orange-600 dark:text-orange-500">
+            {lidarrSyncProgress.current}/{lidarrSyncProgress.total}
+          </span>
+        </div>
+      )}
       <div className="overflow-auto flex-1">
         <table className="w-full">
           <thead className="bg-zinc-50 dark:bg-zinc-800/95 sticky top-0">
@@ -157,12 +160,14 @@ export function SelectedPlaylistsPanel({
             {selectedPlaylists.map((playlist) => (
               <tr
                 key={playlist.id}
-                onClick={() => onToggleCheck(playlist.id)}
+                onClick={() => handlePlaylistRowClick(playlist.id)}
                 className={`
                   cursor-pointer transition-colors
                   ${
                     checkedPlaylistIds.has(playlist.id)
                       ? "bg-zinc-100 dark:bg-zinc-800 border-l-4 border-l-green-500"
+                      : currentPlaylistId === playlist.id
+                        ? "bg-blue-50 dark:bg-blue-900/20"
                       : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   }
                 `}
@@ -175,6 +180,7 @@ export function SelectedPlaylistsPanel({
                     type="checkbox"
                     checked={checkedPlaylistIds.has(playlist.id)}
                     onChange={() => onToggleCheck(playlist.id)}
+                    disabled={isExporting}
                     className="rounded border-zinc-300 dark:border-zinc-600"
                   />
                 </td>

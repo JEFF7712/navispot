@@ -1,3 +1,6 @@
+import { retryWithBackoff } from "@/lib/utils/retry"
+import { RateLimiter } from "@/lib/spotify/rate-limiter"
+
 export interface LidarrCredentials {
   url: string
   apiKey: string
@@ -35,6 +38,8 @@ export interface LidarrMetadataProfile {
   id: number
   name: string
 }
+
+const lidarrRateLimiter = new RateLimiter(2, 1000)
 
 export class LidarrApiClient {
   private baseUrl: string
@@ -85,27 +90,40 @@ export class LidarrApiClient {
     return res.json()
   }
 
-  async lookupArtist(term: string): Promise<LidarrArtistLookup[]> {
+  async lookupArtist(term: string, signal?: AbortSignal): Promise<LidarrArtistLookup[]> {
+    await lidarrRateLimiter.acquire()
     const params = new URLSearchParams({ term })
-    const res = await this._fetch(`/api/v1/artist/lookup?${params}`)
+    const res = await retryWithBackoff(
+      () => this._fetch(`/api/v1/artist/lookup?${params}`, { signal }),
+      { signal }
+    )
     if (!res.ok) throw new Error(`Artist lookup failed: ${res.status}`)
     return res.json()
   }
 
-  async addArtist(artist: {
-    foreignArtistId: string
-    artistName: string
-    qualityProfileId: number
-    metadataProfileId: number
-    rootFolderPath: string
-    monitored: boolean
-    addOptions: { searchForMissingAlbums: boolean }
-  }): Promise<LidarrArtist> {
-    const res = await this._fetch("/api/v1/artist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(artist),
-    })
+  async addArtist(
+    artist: {
+      foreignArtistId: string
+      artistName: string
+      qualityProfileId: number
+      metadataProfileId: number
+      rootFolderPath: string
+      monitored: boolean
+      addOptions: { searchForMissingAlbums: boolean }
+    },
+    signal?: AbortSignal
+  ): Promise<LidarrArtist> {
+    await lidarrRateLimiter.acquire()
+    const res = await retryWithBackoff(
+      () =>
+        this._fetch("/api/v1/artist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(artist),
+          signal,
+        }),
+      { signal }
+    )
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`Failed to add artist: ${res.status} - ${text}`)
@@ -118,7 +136,7 @@ export class LidarrApiClient {
       ...options,
       headers: {
         "X-Api-Key": this.apiKey,
-        ...options?.headers,
+        ...(options?.headers ?? {}),
       },
     })
   }

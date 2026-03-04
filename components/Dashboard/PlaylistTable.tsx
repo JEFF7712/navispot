@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo, memo, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
 import { Calendar } from "@/components/ui/calendar"
@@ -43,7 +43,6 @@ function DatePicker({
       
       // Check available space
       const spaceAbove = rect.top
-      const spaceBelow = window.innerHeight - rect.bottom
       
       // Position: top center if space, otherwise bottom center
       let top
@@ -92,31 +91,31 @@ function DatePicker({
     onChange("")
   }
 
-  const calendarPortal = useMemo(() => {
-    if (!isOpen || !calendarPosition.ready) return null
-    return createPortal(
-      <div 
-        data-calendar-portal
-        className="fixed z-[99999] bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-700 shadow-lg shadow-zinc-200/50 dark:shadow-black/50 p-2"
-        style={{
-          top: `${calendarPosition.top}px`,
-          left: `${calendarPosition.left}px`,
-          maxWidth: 'calc(100vw - 16px)',
-          maxHeight: 'calc(100vh - 16px)',
-          overflow: 'auto',
-          willChange: 'transform'
-        }}
-      >
-        <Calendar
-          mode="single"
-          selected={date}
-          onSelect={handleSelect}
-          className="rounded-md"
-        />
-      </div>,
-      document.body
-    )
-  }, [isOpen, calendarPosition.ready, calendarPosition.top, calendarPosition.left, date])
+  const calendarPortal =
+    isOpen && calendarPosition.ready
+      ? createPortal(
+          <div
+            data-calendar-portal
+            className="fixed z-[99999] bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-700 shadow-lg shadow-zinc-200/50 dark:shadow-black/50 p-2"
+            style={{
+              top: `${calendarPosition.top}px`,
+              left: `${calendarPosition.left}px`,
+              maxWidth: "calc(100vw - 16px)",
+              maxHeight: "calc(100vh - 16px)",
+              overflow: "auto",
+              willChange: "transform",
+            }}
+          >
+            <Calendar
+              mode="single"
+              selected={date}
+              onSelect={handleSelect}
+              className="rounded-md"
+            />
+          </div>,
+          document.body,
+        )
+      : null
 
   return (
     <div ref={pickerRef} className={`relative ${className}`}>
@@ -285,92 +284,78 @@ export function PlaylistTable({
   datesLoadedCount = 0,
 }: PlaylistTableProps) {
   const [showFilters, setShowFilters] = useState(false)
-  const [popoverPosition, setPopoverPosition] = useState<"below" | "above">("below")
   const filterButtonRef = useRef<HTMLButtonElement>(null)
   const filterPanelRef = useRef<HTMLDivElement>(null)
 
   // Calculate popover position based on viewport space
-  const [popoverStyle, setPopoverStyle] = useState<{ top: number; left: number; isReady: boolean }>({ top: 0, left: 0, isReady: false })
-  
-  useEffect(() => {
-    if (showFilters && filterButtonRef.current) {
-      const buttonRect = filterButtonRef.current.getBoundingClientRect()
-      const spaceBelow = window.innerHeight - buttonRect.bottom
-      const spaceAbove = buttonRect.top
-      const popoverHeight = Math.min(400, window.innerHeight * 0.7)
-      const popoverWidth = window.innerWidth < 640 ? 320 : 384 // w-80 or w-96
+  const [popoverStyle, setPopoverStyle] = useState<{
+    top: number
+    left: number
+    isReady: boolean
+    placement: "below" | "above"
+  }>({ top: 0, left: 0, isReady: false, placement: "below" })
 
-      // Determine position (above or below)
-      let position: "above" | "below" = "below"
-      if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
-        position = "above"
-        setPopoverPosition("above")
-      } else {
-        setPopoverPosition("below")
-      }
+  const updatePopoverStyle = useCallback(() => {
+    if (!filterButtonRef.current) return
 
-      // Calculate vertical position
-      let top = position === "below"
+    const buttonRect = filterButtonRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - buttonRect.bottom
+    const spaceAbove = buttonRect.top
+    const popoverHeight = Math.min(400, window.innerHeight * 0.7)
+    const popoverWidth = window.innerWidth < 640 ? 320 : 384
+
+    let placement: "above" | "below" = "below"
+    if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
+      placement = "above"
+    }
+
+    let top =
+      placement === "below"
         ? buttonRect.bottom + 8
         : buttonRect.top - popoverHeight - 8
 
-      // Ensure it doesn't go above viewport
-      if (top < 8) {
-        top = 8
-        // If we can't fit above, force below
-        if (position === "above") {
-          top = buttonRect.bottom + 8
-          setPopoverPosition("below")
-        }
+    if (top < 8) {
+      top = 8
+      if (placement === "above") {
+        placement = "below"
+        top = buttonRect.bottom + 8
       }
-
-      // Calculate horizontal position (centered under the button)
-      const buttonCenter = buttonRect.left + (buttonRect.width / 2)
-      let left = buttonCenter - (popoverWidth / 2)
-
-      // Ensure it doesn't go off left edge
-      if (left < 8) {
-        left = 8
-      }
-      // Ensure it doesn't go off right edge
-      if (left + popoverWidth > window.innerWidth - 8) {
-        left = window.innerWidth - popoverWidth - 8
-      }
-
-      setPopoverStyle({ top, left, isReady: true })
     }
-  }, [showFilters])
+
+    const buttonCenter = buttonRect.left + buttonRect.width / 2
+    let left = buttonCenter - popoverWidth / 2
+
+    if (left < 8) {
+      left = 8
+    }
+    if (left + popoverWidth > window.innerWidth - 8) {
+      left = window.innerWidth - popoverWidth - 8
+    }
+
+    setPopoverStyle({ top, left, isReady: true, placement })
+  }, [])
+
+  const handleToggleFilters = useCallback(() => {
+    setShowFilters((prev) => {
+      const next = !prev
+      if (next) {
+        updatePopoverStyle()
+      }
+      return next
+    })
+  }, [updatePopoverStyle])
 
   // Recalculate position on window resize
   useEffect(() => {
     function handleResize() {
-      if (showFilters && filterButtonRef.current) {
-        const buttonRect = filterButtonRef.current.getBoundingClientRect()
-        const popoverHeight = Math.min(400, window.innerHeight * 0.7)
-        const popoverWidth = window.innerWidth < 640 ? 320 : 384
-
-        let top = popoverPosition === "below"
-          ? buttonRect.bottom + 8
-          : buttonRect.top - popoverHeight - 8
-
-        if (top < 8) top = 8
-
-        // Center horizontally
-        const buttonCenter = buttonRect.left + (buttonRect.width / 2)
-        let left = buttonCenter - (popoverWidth / 2)
-
-        if (left < 8) left = 8
-        if (left + popoverWidth > window.innerWidth - 8) {
-          left = window.innerWidth - popoverWidth - 8
-        }
-
-        setPopoverStyle({ top, left, isReady: true })
+      if (showFilters) {
+        updatePopoverStyle()
       }
     }
 
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
-  }, [showFilters, popoverPosition])
+  }, [showFilters, updatePopoverStyle])
 
   // Close filter panel when clicking outside
   useEffect(() => {
@@ -449,7 +434,7 @@ export function PlaylistTable({
           <div className="relative">
             <button
               ref={filterButtonRef}
-              onClick={() => setShowFilters((prev) => !prev)}
+              onClick={handleToggleFilters}
               disabled={isExporting}
               className={`group relative flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${
                 hasActiveFilters || showFilters
@@ -480,7 +465,7 @@ export function PlaylistTable({
             {showFilters && popoverStyle.isReady && typeof document !== 'undefined' && createPortal(
               <div
                 ref={filterPanelRef}
-                className={`fixed z-[9999] popover-enter ${popoverPosition === "below" ? "popover-enter-below" : "popover-enter-above"}`}
+                className={`fixed z-[9999] popover-enter ${popoverStyle.placement === "below" ? "popover-enter-below" : "popover-enter-above"}`}
                 style={{
                   top: `${popoverStyle.top}px`,
                   left: `${popoverStyle.left}px`

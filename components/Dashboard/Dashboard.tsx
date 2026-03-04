@@ -15,10 +15,7 @@ import {
   SelectedPlaylistsPanel,
   SelectedPlaylist,
 } from "@/components/Dashboard/SelectedPlaylistsPanel"
-import {
-  UnmatchedSongsPanel,
-  UnmatchedSong,
-} from "@/components/Dashboard/UnmatchedSongsPanel"
+import type { UnmatchedSong } from "@/components/Dashboard/UnmatchedSongsPanel"
 import {
   SongsPanel,
   PlaylistGroup,
@@ -39,7 +36,6 @@ import {
   loadPlaylistExportData,
   savePlaylistExportData,
   getAllExportData,
-  isPlaylistUpToDate,
   type PlaylistExportData,
   type TrackExportStatus,
 } from "@/lib/export/track-export-cache"
@@ -50,6 +46,7 @@ import NavispotLogo from "@/public/navispot.png"
 import { CsvUpload } from "@/components/Dashboard/CsvUpload"
 import { CsvPlaylist } from "@/lib/csv/parser"
 import { LidarrApiClient } from "@/lib/lidarr/client"
+import { createLidarrExporter, type LidarrSyncResult } from "@/lib/export/lidarr-exporter"
 
 const LIKED_SONGS_ID = "liked-songs"
 
@@ -91,7 +88,7 @@ export function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [progressState, setProgressState] = useState<ProgressState | null>(null)
+  const [, setProgressState] = useState<ProgressState | null>(null)
   const [likedSongsCount, setLikedSongsCount] = useState<number>(0)
   const [refreshing, setRefreshing] = useState(false)
   const [navidromePlaylists, setNavidromePlaylists] = useState<
@@ -103,7 +100,7 @@ export function Dashboard() {
   const [currentUnmatchedPlaylistId, setCurrentUnmatchedPlaylistId] = useState<
     string | null
   >(null)
-  const [unmatchedSongs, setUnmatchedSongs] = useState<UnmatchedSong[]>([])
+  const [, setUnmatchedSongs] = useState<UnmatchedSong[]>([])
   const [selectedPlaylistsStats, setSelectedPlaylistsStats] = useState<
     SelectedPlaylist[]
   >([])
@@ -113,6 +110,11 @@ export function Dashboard() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
   const [searchQuery, setSearchQuery] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
+  const [lidarrResult, setLidarrResult] = useState<LidarrSyncResult | null>(null)
+  const [lidarrSyncProgress, setLidarrSyncProgress] = useState<{
+    current: number
+    total: number
+  } | null>(null)
   const [showCancel, setShowCancel] = useState(false)
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false)
   const [ownerFilter, setOwnerFilter] = useState("")
@@ -433,9 +435,8 @@ export function Dashboard() {
       }
 
       // Find playlists that still need dates
-      const currentDates = cachedDates.size > 0 ? cachedDates : playlistCreatedDates
       const missingIds = playlists
-        .filter((p) => !currentDates.has(p.id))
+        .filter((p) => !cachedDates.has(p.id))
         .map((p) => p.id)
 
       if (missingIds.length === 0) return
@@ -842,6 +843,7 @@ export function Dashboard() {
     setIsExporting(true)
     setShowConfirmation(false)
     setError(null)
+    setLidarrResult(null)
 
     const abortController = new AbortController()
     abortControllerRef.current = abortController
@@ -931,9 +933,6 @@ export function Dashboard() {
 
           // Check for cached export data
           cachedData = loadPlaylistExportData(item.id)
-          const upToDate = cachedData
-            ? isPlaylistUpToDate(cachedData, item.snapshot_id || "")
-            : false
           const hasNavidromePlaylist = !!cachedData?.navidromePlaylistId
           useDifferentialMatching = hasNavidromePlaylist
         }
@@ -1412,59 +1411,40 @@ export function Dashboard() {
 
         if (i === itemsToExport.length - 1) {
           // Sync artists to Lidarr if connected
-          if (lidarr.isConnected && lidarr.credentials) {
+          if (lidarr.isConnected && lidarr.credentials && allExportedArtists.size > 0) {
             try {
               const lidarrClient = new LidarrApiClient(
                 lidarr.credentials.url,
                 lidarr.credentials.apiKey,
               )
-
-              if (allExportedArtists.size > 0) {
-                const existingArtists = await lidarrClient.getExistingArtists()
-                const existingNames = new Set(
-                  existingArtists.map((a) => a.artistName.toLowerCase()),
-                )
-
-                const rootFolders = await lidarrClient.getRootFolders()
-                const qualityProfiles = await lidarrClient.getQualityProfiles()
-                const metadataProfiles = await lidarrClient.getMetadataProfiles()
-
-                if (rootFolders.length > 0 && qualityProfiles.length > 0 && metadataProfiles.length > 0) {
-                  const rootFolder = rootFolders[0].path
-                  const qualityProfileId = qualityProfiles[0].id
-                  const metadataProfileId = metadataProfiles[0].id
-
-                  let added = 0
-                  for (const name of allExportedArtists) {
-                    if (existingNames.has(name.toLowerCase())) continue
-
-                    try {
-                      const results = await lidarrClient.lookupArtist(name)
-                      if (results.length > 0) {
-                        await lidarrClient.addArtist({
-                          foreignArtistId: results[0].foreignArtistId,
-                          artistName: results[0].artistName,
-                          qualityProfileId,
-                          metadataProfileId,
-                          rootFolderPath: rootFolder,
-                          monitored: true,
-                          addOptions: { searchForMissingAlbums: true },
-                        })
-                        existingNames.add(results[0].artistName.toLowerCase())
-                        added++
-                      }
-                    } catch (lidarrErr) {
-                      console.warn(`Failed to add artist "${name}" to Lidarr:`, lidarrErr)
-                    }
-                  }
-
-                  if (added > 0) {
-                    console.log(`Added ${added} new artists to Lidarr`)
-                  }
-                }
-              }
+              const lidarrExporter = createLidarrExporter(lidarrClient)
+              const result = await lidarrExporter.syncArtists(allExportedArtists, {
+                signal,
+                onProgress: (progress) => {
+                  setLidarrSyncProgress({
+                    current: progress.current,
+                    total: progress.total,
+                  })
+                },
+              })
+              setLidarrResult(result)
             } catch (lidarrErr) {
-              console.warn("Lidarr sync failed:", lidarrErr)
+              if (lidarrErr instanceof DOMException && lidarrErr.name === "AbortError") {
+                throw lidarrErr
+              }
+              setLidarrResult({
+                added: 0,
+                skipped: 0,
+                failed: allExportedArtists.size,
+                errors: [
+                  {
+                    artistName: "Lidarr sync",
+                    reason: lidarrErr instanceof Error ? lidarrErr.message : String(lidarrErr),
+                  },
+                ],
+              })
+            } finally {
+              setLidarrSyncProgress(null)
             }
           }
 
@@ -1629,6 +1609,7 @@ export function Dashboard() {
       checkedPlaylistIds={checkedPlaylistIds}
       onToggleCheck={handleTogglePlaylistCheck}
       onToggleCheckAll={handleToggleCheckAllPlaylists}
+      lidarrSyncProgress={lidarrSyncProgress}
       statistics={{
         matched: selectedPlaylistsStats.reduce((sum, s) => sum + s.matched, 0),
         unmatched: selectedPlaylistsStats.reduce(
@@ -1713,6 +1694,14 @@ export function Dashboard() {
     )
   }
 
+  const lidarrSummary =
+    lidarrResult &&
+    (lidarrResult.added > 0 || lidarrResult.failed > 0)
+      ? lidarrResult.failed > 0
+        ? ` Lidarr: added ${lidarrResult.added}, ${lidarrResult.failed} failed.`
+        : ` Lidarr: added ${lidarrResult.added} artists.`
+      : ""
+
   const successToast = showSuccess && (
     <div className="fixed top-4 right-4 z-50 animate-fade-in">
       <div className="flex items-center gap-3 rounded-lg bg-green-500 px-4 py-3 text-white shadow-lg">
@@ -1730,7 +1719,7 @@ export function Dashboard() {
           />
         </svg>
         <span className="text-sm font-medium">
-          Export completed successfully!
+          Export completed successfully!{lidarrSummary}
         </span>
         <button
           onClick={() => setShowSuccess(false)}

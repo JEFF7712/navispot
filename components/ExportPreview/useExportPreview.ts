@@ -27,12 +27,19 @@ export function useExportPreview({ statistics, existingPlaylists = [] }: UseExpo
     return 0;
   }, [statistics.unmatched, statistics.ambiguous, skipUnmatched]);
 
+  const hasSelectedPlaylist = useMemo(() => {
+    if (!selectedPlaylistId) {
+      return false;
+    }
+    return existingPlaylists.some((playlist) => playlist.id === selectedPlaylistId);
+  }, [selectedPlaylistId, existingPlaylists]);
+
   const canExport = useMemo(() => {
     if (selectedMode === 'create') {
       return estimatedExported > 0;
     }
-    return estimatedExported > 0 && selectedPlaylistId !== undefined;
-  }, [selectedMode, selectedPlaylistId, estimatedExported]);
+    return estimatedExported > 0 && hasSelectedPlaylist;
+  }, [selectedMode, estimatedExported, hasSelectedPlaylist]);
 
   const setMode = useCallback((mode: ExportMode) => {
     setSelectedMode(mode);

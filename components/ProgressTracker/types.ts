@@ -1,4 +1,4 @@
-export type ProgressPhase = 'idle' | 'matching' | 'exporting' | 'completed' | 'cancelled' | 'error';
+export type ProgressPhase = 'idle' | 'matching' | 'exporting' | 'lidarr' | 'completed' | 'cancelled' | 'error';
 
 export interface CurrentTrackInfo {
   name: string;

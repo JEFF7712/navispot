@@ -35,7 +35,7 @@ function GlobalErrorHandler() {
 }
 
 export default function Home() {
-  const { isLoading, spotify, navidrome, lidarr } = useAuth()
+  const { isLoading, navidrome } = useAuth()
 
   if (isLoading) {
     return (

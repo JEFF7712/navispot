@@ -116,6 +116,20 @@ NEXT_PUBLIC_APP_URL=https://your-domain.com
 
 Update Spotify Dashboard with your production redirect URI.
 
+### GitHub Actions CI/CD
+
+This repository includes `.github/workflows/ci-cd.yml`:
+
+- **CI** (pull requests + `main` pushes): installs dependencies, runs lint, and runs a production build.
+- **CD** (`main` pushes + manual dispatch): builds the deploy image using:
+
+```bash
+docker builder prune -f && docker build --no-cache -t jeff7712/navispot:latest .
+```
+
+If `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are configured as repository secrets,
+the workflow also pushes `jeff7712/navispot:latest` to Docker Hub.
+
 ---
 
 ## 💝 Donations

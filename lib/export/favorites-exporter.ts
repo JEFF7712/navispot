@@ -1,7 +1,6 @@
 import { NavidromeApiClient } from '@/lib/navidrome/client';
 import { TrackMatch } from '@/types/matching';
 import {
-  FavoritesExportProgress,
   FavoritesExportError,
   FavoritesExportResult,
   FavoritesExporterOptions,
@@ -64,45 +63,58 @@ export class DefaultFavoritesExporter implements FavoritesExporter {
       };
     }
 
-    for (let i = 0; i < matchedTracks.length; i++) {
-      checkAbort();
-      const match = matchedTracks[i];
-      const songId = match.navidromeSong!.id;
-      const trackName = match.spotifyTrack.name;
-      const artistName = match.spotifyTrack.artists?.[0]?.name || 'Unknown';
+    const BATCH_SIZE = 50;
+    let processed = 0;
 
-      if (onProgress) {
-        checkAbort();
-        await onProgress({
-          current: i + 1,
-          total: matchedTracks.length,
-          percent: Math.round(((i + 1) / matchedTracks.length) * 100),
-          currentTrack: `${trackName} - ${artistName}`,
-          status: 'exporting',
-        });
+    for (let chunkStart = 0; chunkStart < matchedTracks.length; chunkStart += BATCH_SIZE) {
+      checkAbort();
+      const chunk = matchedTracks.slice(chunkStart, chunkStart + BATCH_SIZE);
+      const songIds = chunk.map((m) => m.navidromeSong!.id);
+
+      const batchResult = await this.navidromeClient.starSongs(songIds);
+
+      if (batchResult.success) {
+        starred += chunk.length;
+      } else {
+        for (let j = 0; j < chunk.length; j++) {
+          checkAbort();
+          const match = chunk[j];
+          const songId = match.navidromeSong!.id;
+          const trackName = match.spotifyTrack.name;
+          const artistName = match.spotifyTrack.artists?.[0]?.name || 'Unknown';
+
+          try {
+            const result = await this.starSong(songId, signal);
+            if (result.success) {
+              starred++;
+            } else {
+              failed++;
+              errors.push({ trackName, artistName, reason: 'Failed to star song' });
+            }
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+              throw error;
+            }
+            failed++;
+            errors.push({
+              trackName,
+              artistName,
+              reason: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        }
       }
 
-      try {
-        const result = await this.starSong(songId, signal);
-        if (result.success) {
-          starred++;
-        } else {
-          failed++;
-          errors.push({
-            trackName,
-            artistName,
-            reason: 'Failed to star song',
-          });
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          throw error;
-        }
-        failed++;
-        errors.push({
-          trackName,
-          artistName,
-          reason: error instanceof Error ? error.message : 'Unknown error',
+      processed += chunk.length;
+      if (onProgress) {
+        checkAbort();
+        const lastInChunk = chunk[chunk.length - 1];
+        await onProgress({
+          current: processed,
+          total: matchedTracks.length,
+          percent: Math.round((processed / matchedTracks.length) * 100),
+          currentTrack: `${lastInChunk.spotifyTrack.name} - ${lastInChunk.spotifyTrack.artists?.[0]?.name || 'Unknown'}`,
+          status: 'exporting',
         });
       }
     }

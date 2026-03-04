@@ -9,6 +9,7 @@ const PHASE_LABELS: Record<ProgressPhase, string> = {
   idle: 'Ready',
   matching: 'Matching tracks',
   exporting: 'Exporting to Navidrome',
+  lidarr: 'Syncing to Lidarr',
   completed: 'Export complete',
   cancelled: 'Export cancelled',
   error: 'Export failed',
@@ -16,7 +17,7 @@ const PHASE_LABELS: Record<ProgressPhase, string> = {
 
 export function ProgressTracker({ state, onCancel, onComplete }: ProgressTrackerProps) {
   const { phase, currentTrack, progress, statistics, error } = state;
-  const isActive = phase === 'matching' || phase === 'exporting';
+  const isActive = phase === 'matching' || phase === 'exporting' || phase === 'lidarr';
   const isComplete = phase === 'completed' || phase === 'cancelled' || phase === 'error';
 
   useEffect(() => {

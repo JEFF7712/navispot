@@ -2,7 +2,7 @@ import React from 'react';
 
 interface ExportProgressPanelProps {
   playlistName: string;
-  phase: 'matching' | 'exporting' | 'completed';
+  phase: 'matching' | 'exporting' | 'lidarr' | 'completed';
   progress: {
     current: number;
     total: number;
@@ -20,7 +20,6 @@ interface ExportProgressPanelProps {
     exported: number;
     failed: number;
   };
-  onCancel: () => void;
 }
 
 export function ExportProgressPanel({
@@ -29,7 +28,6 @@ export function ExportProgressPanel({
   progress,
   currentTrack,
   statistics,
-  onCancel,
 }: ExportProgressPanelProps) {
   return (
     <div className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
@@ -43,26 +41,32 @@ export function ExportProgressPanel({
               ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
               : phase === 'exporting'
                 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                : phase === 'lidarr'
+                  ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400'
+                  : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
           }`}
         >
           {phase === 'matching'
             ? 'Matching'
             : phase === 'exporting'
               ? 'Exporting'
-              : 'Complete'}
+              : phase === 'lidarr'
+                ? 'Syncing to Lidarr'
+                : 'Complete'}
         </span>
       </div>
 
       <div className="mb-3">
         <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-          <span>Processing...</span>
+          <span>
+            {phase === 'lidarr' ? 'Syncing artists to Lidarr...' : 'Processing...'}
+          </span>
           <span className="font-medium">{progress.percent}%</span>
         </div>
         <div className="h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-300 ${
-              phase === 'completed' ? 'bg-green-500' : 'bg-blue-500'
+              phase === 'completed' ? 'bg-green-500' : phase === 'lidarr' ? 'bg-orange-500' : 'bg-blue-500'
             }`}
             style={{ width: `${progress.percent}%` }}
           />
